@@ -3,6 +3,10 @@
 ## This example mirrors the small runnable example in ?badgers, but evaluates
 ## the (mu, nu) grid in parallel by calling badgers_mcmc() directly. It then
 ## refines the grid around the coarse optimum, as in the paper workflow.
+##
+## It uses the paper settings (10000 iterations, 5000 burn-in), so each
+## (mu, nu) run takes tens of seconds on a small problem; the 34 runs are
+## spread over the available cores.
 
 ## Optional: uncomment if you use a custom R library on a cluster.
 ## .libPaths("~/rlibs")
@@ -14,8 +18,8 @@ seed <- 123
 
 n <- 40
 p <- 30
-burnin <- 150
-n_iter <- 300
+burnin <- 5000
+n_iter <- 10000
 
 sim <- dg(
   seed = seed,
@@ -71,7 +75,8 @@ run_one <- function(mu_i, nu_i, tag) {
       list(
         mu = mu_i, nu = nu_i,
         MSPE_tune = fit$MSPE_tune, MSPE_test = fit$MSPE_test,
-        CI95 = fit$CI95, beta_mean = fit$beta_mean
+        CI95 = fit$CI95, CI90 = fit$CI90, CI80 = fit$CI80,
+        beta_mean = fit$beta_mean
       ),
       file = tmp_file
     )
@@ -139,3 +144,4 @@ cat("Tuning MSPE:", best$MSPE_tune, "\n")
 cat("Test MSPE:", best$MSPE_test, "\n")
 cat("True nonzero coefficients:", which(sim$beta != 0), "\n")
 cat("Selected by 95% interval:", which(best$CI95 != 0), "\n")
+cat("Selected by 80% interval:", which(best$CI80 != 0), "\n")

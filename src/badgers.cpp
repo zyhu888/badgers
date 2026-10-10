@@ -1177,7 +1177,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
   double MSPE_test = badgers_stats::mean_twopass(sq_test);
 
   arma::mat BETA_a = as<arma::mat>(BETA);
-  NumericVector beta_mean(p), Beta_95(p), Beta_90(p);
+  NumericVector beta_mean(p), Beta_95(p), Beta_90(p), Beta_80(p);
   for (int j = 0; j < p; ++j) {
     std::vector<double> row_vals(n_keep);
     for (int c = 0; c < n_keep; ++c) row_vals[c] = BETA_a(j, burnin + c);
@@ -1190,12 +1190,17 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
     double q05 = badgers_stats::quantile7(row_vals, 0.05);
     double q95 = badgers_stats::quantile7(row_vals, 0.95);
     Beta_90[j] = (q05 <= 0 && q95 >= 0) ? 0.0 : badgers_stats::mean_twopass(row_vals);
+
+    double q10 = badgers_stats::quantile7(row_vals, 0.10);
+    double q90 = badgers_stats::quantile7(row_vals, 0.90);
+    Beta_80[j] = (q10 <= 0 && q90 >= 0) ? 0.0 : badgers_stats::mean_twopass(row_vals);
   }
 
   // ===== return results =====
   List result = List::create(
     _["CI95"] = Beta_95,
     _["CI90"] = Beta_90,
+    _["CI80"] = Beta_80,
     _["MSPE_test"] = MSPE_test,
     _["MSPE_tune"] = MSPE_tune,
     _["mu"] = mu,

@@ -69,8 +69,8 @@ seed <- 123
 
 n <- 40
 p <- 30
-burnin <- 150
-n_iter <- 300
+burnin <- 5000
+n_iter <- 10000
 ```
 
 The simulated data are generated with `dg()`, whose defaults are the settings
@@ -126,6 +126,7 @@ print(fit)
 
 fit$best_result$MSPE_test
 which(fit$best_result$CI95 != 0)
+which(fit$best_result$CI80 != 0)
 which(beta_true != 0)
 ```
 
@@ -147,20 +148,26 @@ fit_one <- badgers_mcmc(
 ```
 
 The paper settings are `n_iter = 10000` and `burnin = 5000`, which are the
-defaults. For large grids, see the `parallel-runs` vignette for a template that
+defaults and are used throughout this vignette. For large grids, see the `parallel-runs` vignette for a template that
 runs fixed-`(mu, nu)` jobs in parallel and combines the MSPE values afterward.
 
 # Selecting Predictors
 
-`CI95` and `CI90` hold the posterior mean of each coefficient, set to zero when
-the 95% or 90% credible interval covers zero. Other levels, such as the 80%
-intervals used in the data applications of the paper, can be computed from the
-coefficient trace `BETA`, whose columns are the MCMC iterations:
+`CI95`, `CI90` and `CI80` hold the posterior mean of each coefficient, set to
+zero when the 95%, 90% or 80% credible interval covers zero. The 80% intervals
+are the ones used for gene selection in the data applications of the paper.
 
 ```{r credible-interval, eval = FALSE}
+which(fit_one$CI80 != 0)
+```
+
+Other levels can be computed from the coefficient trace `BETA`, whose columns
+are the MCMC iterations:
+
+```{r credible-interval-other, eval = FALSE}
 beta_post <- fit_one$BETA[, (burnin + 1):n_iter]
-ci80 <- t(apply(beta_post, 1, quantile, probs = c(0.1, 0.9)))
-which(ci80[, 1] > 0 | ci80[, 2] < 0)
+ci70 <- t(apply(beta_post, 1, quantile, probs = c(0.15, 0.85)))
+which(ci70[, 1] > 0 | ci70[, 2] < 0)
 ```
 
 # References

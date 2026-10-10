@@ -58,15 +58,15 @@ predictors receive related shrinkage. The hyperparameters \code{mu} and
 \code{nu} are tuned on the grid.
 
 The defaults of the other arguments are the settings used in the paper:
-10000 iterations with 5000 burn-in iterations, and the coarse grid
+10000 iterations with 5000 burn-in iterations (also used in the example), and the coarse grid
 \code{c(1, 3, 5, 7, 9)} for both \code{mu} and \code{nu}. A fine grid around the
 coarse optimum can be searched in a second call; see the parallel-runs
 vignette.
 
-The returned coefficient summaries \code{CI95} and \code{CI90} in
+The returned coefficient summaries \code{CI95}, \code{CI90} and \code{CI80} in
 \code{best_result} are posterior means set to zero when the corresponding
-credible interval covers zero. Other levels can be computed from the
-coefficient trace \code{best_result$BETA}.
+95\%, 90\% or 80\% credible interval covers zero. Other levels can be
+computed from the coefficient trace \code{best_result$BETA}.
 }
 \examples{
 library(badgers)
@@ -98,8 +98,8 @@ fit <- badgers(
   adj_graph = sim$graph,
   mu_grid = c(1, 3),
   nu_grid = c(1, 3),
-  n_iter = 200,
-  burnin = 100,
+  n_iter = 10000,
+  burnin = 5000,
   verbose = FALSE
 )
 
@@ -107,6 +107,7 @@ print(fit)
 
 fit$best_result$MSPE_test
 which(fit$best_result$CI95 != 0)
+which(fit$best_result$CI80 != 0)
 which(sim$beta != 0)
 }
 \references{

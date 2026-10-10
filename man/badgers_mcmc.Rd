@@ -29,7 +29,7 @@ badgers_mcmc(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph,
 \item{lite}{Logical; if \code{TRUE}, full parameter traces are not stored.}
 }
 \value{
-A list containing the validation and test MSPE (\code{MSPE_tune}, \code{MSPE_test}), the posterior mean \code{beta_mean}, the thresholded coefficient estimates \code{CI95} and \code{CI90}, the coefficient trace \code{BETA} (a \code{p} by \code{n_iter} matrix), the sampler adaptation summaries, and the run time in minutes (\code{time}). With \code{lite = FALSE} the traces of the latent predictors and the remaining parameters are also returned.
+A list containing the validation and test MSPE (\code{MSPE_tune}, \code{MSPE_test}), the posterior mean \code{beta_mean}, the thresholded coefficient estimates \code{CI95}, \code{CI90} and \code{CI80}, the coefficient trace \code{BETA} (a \code{p} by \code{n_iter} matrix), the sampler adaptation summaries, and the run time in minutes (\code{time}). With \code{lite = FALSE} the traces of the latent predictors and the remaining parameters are also returned.
 }
 \description{
 Runs the fixed-\code{(mu, nu)} BADGERS Markov chain Monte Carlo sampler.
