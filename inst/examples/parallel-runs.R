@@ -153,12 +153,10 @@ stopCluster(cl)
 best_idx <- which.min(fine_table$MSPE_tune)
 best <- fine_res[[best_idx]]
 
-print(coarse_table)
-print(fine_table)
 cat("Selected mu:", best$mu, "\n")
 cat("Selected nu:", best$nu, "\n")
-cat("Tuning MSPE:", best$MSPE_tune, "\n")
 cat("Test MSPE:", best$MSPE_test, "\n")
 cat("True nonzero coefficients:", which(sim$beta != 0), "\n")
 cat("Selected by 95% interval:", which(best$CI95 != 0), "\n")
+cat("Selected by 90% interval:", which(best$CI90 != 0), "\n")
 cat("Selected by 80% interval:", which(best$CI80 != 0), "\n")
