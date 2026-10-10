@@ -17,7 +17,8 @@ library(badgers)
 
 # Introduction
 
-The BADGERS package provides tools for Bayesian regression with
+The BADGERS (Bayesian ADaptive Graph-guided Errors-in-variables Regression
+Solution) package provides tools for Bayesian regression with
 high-dimensional predictors that are observed with measurement error through
 replicate measurements and that are linked by a known or partially known graph.
 The main workflow samples the latent predictors, the regression coefficients,

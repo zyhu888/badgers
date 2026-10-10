@@ -1,5 +1,5 @@
-**badgers**: Bayesian Graph-Informed Regression with Measurement Error
-in Predictors
+**badgers**: **B**ayesian **AD**aptive **G**raph-guided
+**E**rrors-in-variables **R**egression **S**olution
 ================
 
 [![License:
@@ -7,11 +7,12 @@ GPL-3](https://img.shields.io/badge/License-GPL--3-green.svg)](LICENSE.md)
 
 ## badgers
 
-This R package fits BADGERS, a Bayesian regression model for
-high-dimensional predictors that are observed with measurement error
-through replicate measurements and that are linked by a known or
-partially known graph. The graph hyperparameters `(mu, nu)` are selected
-by minimizing the validation mean squared prediction error.
+This R package fits BADGERS (**B**ayesian **AD**aptive **G**raph-guided
+**E**rrors-in-variables **R**egression **S**olution), a Bayesian
+regression model for high-dimensional predictors that are observed with
+measurement error through replicate measurements and that are linked by
+a known or partially known graph. The graph hyperparameters `(mu, nu)`
+are selected by minimizing the validation mean squared prediction error.
 
 ## Installation
 
