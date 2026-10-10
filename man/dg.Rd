@@ -2,14 +2,16 @@
 \alias{dg}
 \title{Generate BADGERS Data}
 \usage{
-dg(seed, p, g, gsm, ntrain, ntune, ntest, sigma2, rho2, num_rep,
-  qmin, qmax, edii, ediu, eduu, Gmode, Gthres, savefile = NULL)
+dg(seed, p = 200, g = 20, gsm = 10, ntrain = 50, ntune = 50,
+  ntest = 50, sigma2 = 2, rho2 = 2, num_rep = 3, qmin = 4, qmax = 8,
+  edii = 0.6, ediu = 0, eduu = 0.3, Gmode = 0, Gthres = 1,
+  savefile = NULL)
 }
 \arguments{
 \item{seed}{Random seed.}
 \item{p}{Number of predictors.}
 \item{g}{Number of pathways.}
-\item{gsm}{Mean number of predictors per pathway.}
+\item{gsm}{Mean number of predictors per pathway (Poisson).}
 \item{ntrain}{Training sample size.}
 \item{ntune}{Validation (tuning) sample size.}
 \item{ntest}{Test sample size.}
@@ -18,16 +20,51 @@ dg(seed, p, g, gsm, ntrain, ntune, ntest, sigma2, rho2, num_rep,
 \item{num_rep}{Number of replicate measurements per predictor.}
 \item{qmin}{Minimum number of nonzero coefficients.}
 \item{qmax}{Maximum number of nonzero coefficients.}
-\item{edii}{Edge density between important predictors in the true graph.}
-\item{ediu}{Edge density between important and unimportant predictors.}
-\item{eduu}{Edge density between unimportant predictors.}
+\item{edii}{Edge probability between two predictors with nonzero coefficients in the same pathway.}
+\item{ediu}{Edge probability between a predictor with a nonzero coefficient and one with a zero coefficient in the same pathway.}
+\item{eduu}{Edge probability between two predictors with zero coefficients in the same pathway.}
 \item{Gmode}{\code{0} uses the true graph as the working graph; any other value uses a noisy working graph.}
 \item{Gthres}{Fraction of true edges kept in the noisy working graph, in (0, 1]; the remaining edges are random so that the number of edges is unchanged.}
 \item{savefile}{Optional file name; if given, the generated list is saved there with \code{save()}.}
 }
 \value{
-A list containing the true and working graphs (\code{E0}, \code{E}, \code{graph}), the coefficients \code{beta}, and the response and replicate arrays for the training, tuning and test sets (\code{y}, \code{W}, \code{ytune}, \code{Wtune}, \code{ytest}, \code{Wtest}).
+A list containing the true and working graphs (\code{E0}, \code{E}, \code{graph}), the coefficients \code{beta}, and the response and replicate arrays for the training, tuning and test sets (\code{y}, \code{W}, \code{ytune}, \code{Wtune}, \code{ytest}, \code{Wtest}). The replicate arrays have dimension \code{num_rep} by sample size by \code{p}.
 }
 \description{
 Generates a true graph among predictors, multivariate normal predictors with the corresponding precision structure, replicate measurements with measurement error, and a sparse linear response. A working graph, either equal to the true graph or contaminated with random edges, is returned for the sampler.
+}
+\details{
+The defaults are the simulation settings of the paper: \code{p = 200}
+predictors in \code{g = 20} pathways, three replicates per predictor, 4 to 8
+nonzero coefficients with effect sizes from U(0.5, 2), residual variance 2, and
+training, validation and test sets of size 50. The four scenarios of the paper
+are obtained with \code{rho2} and the working graph as follows, using
+\code{seed = 100 + i} (scenarios 1 and 3) or \code{seed = 200 + i} (scenarios 2
+and 4) for data set \code{i}:
+
+\tabular{llll}{
+Scenario \tab Working graph \tab \code{rho2} \tab Arguments \cr
+1 \tab true graph \tab 2 \tab \code{Gmode = 0} \cr
+2 \tab true graph \tab 5 \tab \code{Gmode = 0} \cr
+3 \tab 75\% of true edges plus random edges \tab 2 \tab \code{Gmode = 1, Gthres = 0.75} \cr
+4 \tab 75\% of true edges plus random edges \tab 5 \tab \code{Gmode = 1, Gthres = 0.75} \cr
+}
+
+The generated predictors \code{X} are the latent covariates; the sampler uses
+only the replicates \code{W} and the working graph.
+}
+\examples{
+sim <- dg(
+  seed = 1,
+  p = 30,
+  g = 5,
+  gsm = 8,
+  ntrain = 20,
+  ntune = 20,
+  ntest = 20
+)
+
+dim(sim$W)
+sum(sim$graph) / 2
+which(sim$beta != 0)
 }

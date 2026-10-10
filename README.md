@@ -8,11 +8,14 @@ GPL-3](https://img.shields.io/badge/License-GPL--3-green.svg)](LICENSE.md)
 ## badgers
 
 This R package fits BADGERS (**B**ayesian **AD**aptive **G**raph-guided
-**E**rrors-in-variables **R**egression **S**olution), a Bayesian
-regression model for high-dimensional predictors that are observed with
-measurement error through replicate measurements and that are linked by
-a known or partially known graph. The graph hyperparameters `(mu, nu)`
-are selected by minimizing the validation mean squared prediction error.
+**E**rrors-in-variables **R**egression **S**olution), a graph-guided
+Bayesian regression model for high-dimensional data with replicated
+covariates and measurement error. Latent covariates are inferred from
+the replicate measurements, which may differ in number across
+predictors, and a working graph links the predictor-specific shrinkage
+parameters through a constrained Wishart prior. The log-shrinkage mean
+and scale `(mu, nu)` are selected by minimizing the validation mean
+squared prediction error.
 
 ## Installation
 
@@ -35,9 +38,20 @@ devtools::install_github("zyhu888/badgers")
 
 - `dg()` simulates replicate measurements of high-dimensional
   predictors, a sparse response and a true or noisy working graph from
-  user-specified parameters.
+  user-specified parameters. Its defaults are the simulation settings of
+  the paper.
 
 - `dg_batch()` generates and saves many data sets with `dg()`.
+
+## Data Format
+
+Each of the training, validation and test sets is a response vector of
+length `n` and a three-dimensional array of replicates with dimension
+`num_rep` by `n` by `p`. Predictors may have different numbers of
+replicates: put the replicates of predictor `j` in the first rows of
+`W[, , j]` and pad the remaining rows with `NA`, using the same pattern
+for every observation. The working graph is a `p` by `p` 0/1 adjacency
+matrix.
 
 ## Parallel Runs
 
@@ -52,4 +66,19 @@ system.file("examples", "parallel-runs.R", package = "badgers")
 
 ## Citation
 
-References will be added after the manuscript is available.
+If you use `badgers` in your research, please cite:
+
+``` bibtex
+@unpublished{hu2026graph,
+  title  = {A Graph-Guided Bayesian Regression Model for High-Dimensional Data with Replicated Covariates and Measurement Error},
+  author = {Hu, Zeyu and Qu, Kewen and Long, Qi and Yan, Jun and Li, Wenrui},
+  note   = {Manuscript},
+  year   = {2026}
+}
+```
+
+## References
+
+Hu, Z., Qu, K., Long, Q., Yan, J., & Li, W. (2026). A Graph-Guided
+Bayesian Regression Model for High-Dimensional Data with Replicated
+Covariates and Measurement Error. Manuscript.

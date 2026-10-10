@@ -1,3 +1,67 @@
+## Input checks shared by badgers_mcmc() and badgers().
+##
+## Wtrain, Wtune and Wtest are num_rep x n x p arrays. Predictors may have
+## different numbers of replicates q_j: the first q_j rows of W[, , j] hold the
+## replicates and the remaining rows are NA, with the same pattern for every
+## observation and every data set.
+check_badgers_inputs <- function(ytrain, Wtrain, ytune, Wtune, ytest, Wtest,
+                                 adj_graph) {
+
+  sets <- list(train = list(y = ytrain, W = Wtrain),
+               tune = list(y = ytune, W = Wtune),
+               test = list(y = ytest, W = Wtest))
+
+  for (nm in names(sets)) {
+    W <- sets[[nm]]$W
+    y <- sets[[nm]]$y
+    if (!is.numeric(W) || length(dim(W)) != 3L) {
+      stop(sprintf("W%s must be a numeric num_rep x n x p array.", nm))
+    }
+    if (length(y) != dim(W)[2]) {
+      stop(sprintf("y%s must have length equal to dim(W%s)[2].", nm, nm))
+    }
+    if (anyNA(y)) stop(sprintf("y%s must not contain missing values.", nm))
+  }
+
+  R <- dim(Wtrain)[1]
+  p <- dim(Wtrain)[3]
+  for (nm in c("tune", "test")) {
+    d <- dim(sets[[nm]]$W)
+    if (d[1] != R || d[3] != p) {
+      stop(sprintf(
+        "W%s must have the same number of replicate rows and predictors as Wtrain.",
+        nm))
+    }
+  }
+
+  if (!is.matrix(adj_graph) || any(dim(adj_graph) != p)) {
+    stop("adj_graph must be a p x p matrix, with p = dim(Wtrain)[3].")
+  }
+
+  ## Replicate layout: left-packed NA padding, identical across observations.
+  miss1 <- is.na(Wtrain[, 1, , drop = TRUE])
+  if (is.null(dim(miss1))) miss1 <- matrix(miss1, nrow = R)
+  if (any(miss1[1, ])) {
+    stop("Every predictor needs at least one replicate (first row of W must not be NA).")
+  }
+  if (any(apply(miss1, 2, function(m) any(diff(as.integer(m)) < 0)))) {
+    stop("Replicates must be left-packed: for each predictor, NA padding may only follow the observed replicates.")
+  }
+  for (nm in names(sets)) {
+    W <- sets[[nm]]$W
+    n <- dim(W)[2]
+    expected <- aperm(array(miss1, dim = c(R, p, n)), c(1, 3, 2))
+    if (!identical(is.na(W), expected)) {
+      stop(sprintf(
+        "The NA pattern of W%s must be the same for every observation%s: each predictor needs the same number of replicates throughout.",
+        nm, if (nm == "train") "" else " and match Wtrain"))
+    }
+  }
+
+  invisible(TRUE)
+}
+
+
 badgers_mcmc <- function(
     ytrain,
     Wtrain,
@@ -22,6 +86,8 @@ badgers_mcmc <- function(
     c_graph = 2,
     lite = TRUE
 ) {
+
+  check_badgers_inputs(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph)
 
   start.time <- Sys.time()
 
@@ -150,22 +216,22 @@ dg_batch <- function(
     R,
     head,
     seed,
-    p,
-    g,
-    gsm,
-    ntrain,
-    ntune,
-    ntest,
-    sigma2,
-    rho2,
-    num_rep,
-    qmin,
-    qmax,
-    edii,
-    ediu,
-    eduu,
-    Gmode,
-    Gthres,
+    p = 200,
+    g = 20,
+    gsm = 10,
+    ntrain = 50,
+    ntune = 50,
+    ntest = 50,
+    sigma2 = 2,
+    rho2 = 2,
+    num_rep = 3,
+    qmin = 4,
+    qmax = 8,
+    edii = 0.6,
+    ediu = 0,
+    eduu = 0.3,
+    Gmode = 0,
+    Gthres = 1,
     batch = 0,
     verbose = TRUE
 ) {
@@ -189,22 +255,22 @@ dg_batch <- function(
 
 dg <- function(
     seed,
-    p,
-    g,
-    gsm,
-    ntrain,
-    ntune,
-    ntest,
-    sigma2,
-    rho2,
-    num_rep,
-    qmin,
-    qmax,
-    edii,
-    ediu,
-    eduu,
-    Gmode,
-    Gthres,
+    p = 200,
+    g = 20,
+    gsm = 10,
+    ntrain = 50,
+    ntune = 50,
+    ntest = 50,
+    sigma2 = 2,
+    rho2 = 2,
+    num_rep = 3,
+    qmin = 4,
+    qmax = 8,
+    edii = 0.6,
+    ediu = 0,
+    eduu = 0.3,
+    Gmode = 0,
+    Gthres = 1,
     savefile = NULL
 ) {
 

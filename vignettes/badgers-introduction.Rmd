@@ -18,12 +18,14 @@ library(badgers)
 # Introduction
 
 The BADGERS (Bayesian ADaptive Graph-guided Errors-in-variables Regression
-Solution) package provides tools for Bayesian regression with
-high-dimensional predictors that are observed with measurement error through
-replicate measurements and that are linked by a known or partially known graph.
-The main workflow samples the latent predictors, the regression coefficients,
-the measurement error variance and the graph-informed shrinkage parameters
-jointly through an MCMC sampler.
+Solution) package provides tools for a graph-guided Bayesian regression model
+for high-dimensional data with replicated covariates and measurement error.
+The main workflow samples the latent covariates, the regression coefficients,
+the measurement error variance and the graph-guided shrinkage parameters
+jointly through an MCMC sampler. The working graph couples the
+predictor-specific shrinkage parameters through a constrained Wishart prior,
+so that connected predictors receive related shrinkage without being forced
+to have the same effect.
 
 The package implements:
 
@@ -50,6 +52,13 @@ sets, a response vector of length `n` and a three-dimensional array of
 replicate measurements with dimension `num_rep` by `n` by `p`. The working
 graph is a `p` by `p` 0/1 adjacency matrix.
 
+Predictors may have different numbers of replicates, as when genes are
+measured by different numbers of probes. Put the replicates of predictor `j`
+in the first rows of `W[, , j]` and pad the remaining rows with `NA`, using
+the same pattern for every observation and for all three sets. The inputs are
+checked before sampling, and a layout that violates this rule is reported
+with an error message.
+
 The following example simulates a setting with `p = 30` predictors in 5
 pathways, three replicates per predictor and a sparse response.
 
@@ -64,9 +73,12 @@ burnin <- 150
 n_iter <- 300
 ```
 
-The simulated data are generated with `dg()`. Setting `Gmode = 0` gives the
-sampler the true graph; `Gmode = 1` with `Gthres = 0.75` keeps 75% of the true
-edges and fills the rest with random edges.
+The simulated data are generated with `dg()`, whose defaults are the settings
+of the paper. Setting `Gmode = 0` gives the sampler the true graph;
+`Gmode = 1` with `Gthres = 0.75` keeps the 75% of the true edges with the
+largest absolute partial correlations and fills the rest with random edges.
+The four scenarios of the paper combine `rho2 = 2` or `rho2 = 5` (low or high
+measurement noise) with the true or the noisy working graph.
 
 ```{r simulate-data, eval = FALSE}
 sim <- dg(
@@ -138,6 +150,21 @@ The paper settings are `n_iter = 10000` and `burnin = 5000`, which are the
 defaults. For large grids, see the `parallel-runs` vignette for a template that
 runs fixed-`(mu, nu)` jobs in parallel and combines the MSPE values afterward.
 
+# Selecting Predictors
+
+`CI95` and `CI90` hold the posterior mean of each coefficient, set to zero when
+the 95% or 90% credible interval covers zero. Other levels, such as the 80%
+intervals used in the data applications of the paper, can be computed from the
+coefficient trace `BETA`, whose columns are the MCMC iterations:
+
+```{r credible-interval, eval = FALSE}
+beta_post <- fit_one$BETA[, (burnin + 1):n_iter]
+ci80 <- t(apply(beta_post, 1, quantile, probs = c(0.1, 0.9)))
+which(ci80[, 1] > 0 | ci80[, 2] < 0)
+```
+
 # References
 
-References will be added after the manuscript is available.
+Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. A Graph-Guided Bayesian
+Regression Model for High-Dimensional Data with Replicated Covariates and
+Measurement Error. Manuscript.

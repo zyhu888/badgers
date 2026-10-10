@@ -11,22 +11,22 @@ badgers(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph,
 }
 \arguments{
 \item{ytrain}{Numeric vector of training responses, of length \code{n}.}
-\item{Wtrain}{Three-dimensional array of replicate measurements of the training predictors, with dimension \code{num_rep} by \code{n} by \code{p}.}
+\item{Wtrain}{Three-dimensional array of replicate measurements of the training predictors, with dimension \code{num_rep} by \code{n} by \code{p}. Predictors may have different numbers of replicates \eqn{q_j}: the first \eqn{q_j} rows of \code{Wtrain[, , j]} hold the replicates and the remaining rows are \code{NA}, with the same pattern for every observation.}
 \item{ytune}{Numeric vector of validation (tuning) responses.}
-\item{Wtune}{Three-dimensional array of replicate measurements of the validation predictors, with dimension \code{num_rep} by \code{ntune} by \code{p}.}
+\item{Wtune}{Replicate array of the validation predictors, with dimension \code{num_rep} by \code{ntune} by \code{p} and the same \code{NA} pattern as \code{Wtrain}.}
 \item{ytest}{Numeric vector of test responses.}
-\item{Wtest}{Three-dimensional array of replicate measurements of the test predictors, with dimension \code{num_rep} by \code{ntest} by \code{p}.}
+\item{Wtest}{Replicate array of the test predictors, with dimension \code{num_rep} by \code{ntest} by \code{p} and the same \code{NA} pattern as \code{Wtrain}.}
 \item{adj_graph}{A \code{p} by \code{p} 0/1 adjacency matrix of the working graph among the predictors.}
 \item{mu_grid}{Candidate values of \code{mu}.}
 \item{nu_grid}{Candidate values of \code{nu}.}
 \item{n_iter}{Number of MCMC iterations.}
 \item{burnin}{Number of burn-in iterations.}
-\item{k}{Number of iterations between adaptations of the Metropolis-Hastings proposal standard deviations.}
-\item{a_sigma, b_sigma}{Shape and rate hyperparameters of the prior on the residual variance.}
-\item{a_iota, b_iota}{Shape and diagonal rate hyperparameters of the prior on the precision matrix penalties.}
-\item{a_rho, b_rho}{Shape and rate hyperparameters of the prior on the measurement error variance.}
-\item{eta, epsilon}{Tuning constants of the graph weight update.}
-\item{c_graph}{Edge-level rate constant of the precision matrix prior; a scalar strictly between 0 and 6.}
+\item{k}{Number of iterations between adaptations of the Metropolis-Hastings proposal standard deviations for the log-shrinkage parameters.}
+\item{a_sigma, b_sigma}{Shape and scale of the inverse-Gamma prior on the residual variance \eqn{\sigma^2}.}
+\item{a_iota, b_iota}{Shape \code{a_iota} of the Gamma prior on the shrinkage parameters \eqn{\iota_{jk}} of the latent-covariate precision matrix, and its rate \code{b_iota} for the diagonal entries. The rates of the off-diagonal entries are determined by the working graph and \code{c_graph}.}
+\item{a_rho, b_rho}{Shape and scale of the inverse-Gamma prior on the measurement error variance \eqn{\rho^2}.}
+\item{eta, epsilon}{Shape control \eqn{\eta} and scale control \eqn{\zeta} (called \code{epsilon} here) of the constrained Wishart prior on the precision matrix of the log-shrinkage parameters.}
+\item{c_graph}{Strength of the graph information, a scalar strictly between 0 and 6. The off-diagonal rates of the \eqn{\iota_{jk}} prior are \eqn{d_{jk}^{-1} 10^{-6 + c}}, where \eqn{d_{jk}} is the shortest-path distance between predictors \eqn{j} and \eqn{k} in \code{adj_graph}, and \eqn{10^{-6}} if they are not connected.}
 \item{verbose}{Logical; print progress messages.}
 \item{lite}{Logical; if \code{TRUE}, full parameter traces are not stored.}
 }
@@ -37,24 +37,36 @@ An object of class \code{badgers} with the selected \code{best_mu} and \code{bes
 Runs \code{badgers_mcmc()} over a grid of \code{(mu, nu)} values and returns the model with the smallest validation mean squared prediction error.
 }
 \details{
-\code{badgers()} is the primary interface for fitting BADGERS. For each
+\code{badgers()} is the primary interface for fitting BADGERS (Bayesian
+ADaptive Graph-guided Errors-in-variables Regression Solution). For each
 combination of \code{mu_grid} and \code{nu_grid}, the function calls
 \code{badgers_mcmc()}, records the validation (tuning) and test mean squared
 prediction errors (MSPE), and keeps the run with the smallest tuning MSPE.
 A grid point that fails is skipped; an error is raised only if every grid
 point fails.
 
-The predictors are observed through replicates: each of \code{Wtrain},
-\code{Wtune} and \code{Wtest} is a \code{num_rep} by \code{n} by \code{p}
-array of noisy measurements of the latent predictors. The working graph
-\code{adj_graph} encodes known or partially known relationships among the
-predictors and enters the prior on the predictor-specific shrinkage
-parameters. The hyperparameters \code{mu} and \code{nu} of this prior are
-tuned on the grid.
+The outcome is modeled as a linear function of latent covariates
+\eqn{x_{ij}}, which are observed through replicates
+\eqn{w_{ijr} = x_{ij} + \kappa_{ijr}} with a common measurement error
+variance \eqn{\rho^2}. The coefficients have Laplace priors with
+predictor-specific rate multipliers \eqn{\lambda_j}, and the log-shrinkage
+parameters \eqn{\alpha_j = \log \lambda_j} follow
+\eqn{N(\mu 1, \nu \Phi^{-1})}. The precision matrix \eqn{\Phi} has a
+constrained Wishart prior whose off-diagonal entries are zero for pairs of
+predictors that are not connected in \code{adj_graph}, so that connected
+predictors receive related shrinkage. The hyperparameters \code{mu} and
+\code{nu} are tuned on the grid.
+
+The defaults of the other arguments are the settings used in the paper:
+10000 iterations with 5000 burn-in iterations, and the coarse grid
+\code{c(1, 3, 5, 7, 9)} for both \code{mu} and \code{nu}. A fine grid around the
+coarse optimum can be searched in a second call; see the parallel-runs
+vignette.
 
 The returned coefficient summaries \code{CI95} and \code{CI90} in
 \code{best_result} are posterior means set to zero when the corresponding
-credible interval covers zero.
+credible interval covers zero. Other levels can be computed from the
+coefficient trace \code{best_result$BETA}.
 }
 \examples{
 library(badgers)
@@ -98,5 +110,5 @@ which(fit$best_result$CI95 != 0)
 which(sim$beta != 0)
 }
 \references{
-XXX. References will be added after the manuscript is available.
+Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. A Graph-Guided Bayesian Regression Model for High-Dimensional Data with Replicated Covariates and Measurement Error. Manuscript.
 }
