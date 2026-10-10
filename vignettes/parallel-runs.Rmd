@@ -186,5 +186,9 @@ cat("Selected by 80% interval:", which(best$CI80 != 0), "\n")
 The same script is installed with the package and can be found with:
 
 ```{r find-example, eval = FALSE}
+# path of the installed script
 system.file("examples", "parallel-runs.R", package = "badgers")
+
+# open it in the editor
+file.edit(system.file("examples", "parallel-runs.R", package = "badgers"))
 ```

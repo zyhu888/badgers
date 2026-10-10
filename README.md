@@ -62,8 +62,18 @@ runs on Windows, macOS and Linux. See the parallel-runs vignette and the
 installed example:
 
 ``` r
+# path of the installed script
 system.file("examples", "parallel-runs.R", package = "badgers")
+
+# open it in the editor
+file.edit(system.file("examples", "parallel-runs.R", package = "badgers"))
+
+# or run it directly
+source(system.file("examples", "parallel-runs.R", package = "badgers"))
 ```
+
+The same script is also available in the repository as
+`inst/examples/parallel-runs.R`, and it is shown in `?badgers`.
 
 ## Citation
 

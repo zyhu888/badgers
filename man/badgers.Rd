@@ -60,8 +60,13 @@ predictors receive related shrinkage. The hyperparameters \code{mu} and
 The defaults of the other arguments are the settings used in the paper:
 10000 iterations with 5000 burn-in iterations (also used in the example), and the coarse grid
 \code{c(1, 3, 5, 7, 9)} for both \code{mu} and \code{nu}. A fine grid around the
-coarse optimum can be searched in a second call; see the parallel-runs
-vignette.
+coarse optimum can be searched in a second call.
+
+For large grids, \code{badgers_mcmc()} can be run for each \code{(mu, nu)} pair
+in parallel. A complete template that works on Windows, macOS and Linux is
+installed with the package and can be found with
+\code{system.file("examples", "parallel-runs.R", package = "badgers")}; it is
+also described in the parallel-runs vignette.
 
 The returned coefficient summaries \code{CI95}, \code{CI90} and \code{CI80} in
 \code{best_result} are posterior means set to zero when the corresponding
@@ -105,10 +110,11 @@ fit <- badgers(
 
 print(fit)
 
-fit$best_result$MSPE_test
-which(fit$best_result$CI95 != 0)
-which(fit$best_result$CI80 != 0)
-which(sim$beta != 0)
+cat("Test MSPE:", fit$best_result$MSPE_test, "\n")
+cat("True nonzero coefficients:", which(sim$beta != 0), "\n")
+cat("Selected by 95\% interval:", which(fit$best_result$CI95 != 0), "\n")
+cat("Selected by 90\% interval:", which(fit$best_result$CI90 != 0), "\n")
+cat("Selected by 80\% interval:", which(fit$best_result$CI80 != 0), "\n")
 }
 \references{
 Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. A Graph-Guided Bayesian Regression Model for High-Dimensional Data with Replicated Covariates and Measurement Error. Manuscript.

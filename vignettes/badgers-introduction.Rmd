@@ -124,10 +124,11 @@ fit <- badgers(
 
 print(fit)
 
-fit$best_result$MSPE_test
-which(fit$best_result$CI95 != 0)
-which(fit$best_result$CI80 != 0)
-which(beta_true != 0)
+cat("Test MSPE:", fit$best_result$MSPE_test, "\n")
+cat("True nonzero coefficients:", which(beta_true != 0), "\n")
+cat("Selected by 95% interval:", which(fit$best_result$CI95 != 0), "\n")
+cat("Selected by 90% interval:", which(fit$best_result$CI90 != 0), "\n")
+cat("Selected by 80% interval:", which(fit$best_result$CI80 != 0), "\n")
 ```
 
 # Fixed-(mu, nu) MCMC
@@ -145,6 +146,12 @@ fit_one <- badgers_mcmc(
   n_iter = n_iter,
   burnin = burnin
 )
+
+cat("Tuning MSPE:", fit_one$MSPE_tune, "\n")
+cat("Test MSPE:", fit_one$MSPE_test, "\n")
+cat("Selected by 95% interval:", which(fit_one$CI95 != 0), "\n")
+cat("Selected by 90% interval:", which(fit_one$CI90 != 0), "\n")
+cat("Selected by 80% interval:", which(fit_one$CI80 != 0), "\n")
 ```
 
 The paper settings are `n_iter = 10000` and `burnin = 5000`, which are the
@@ -156,8 +163,11 @@ runs fixed-`(mu, nu)` jobs in parallel and combines the MSPE values afterward.
 `CI95`, `CI90` and `CI80` hold the posterior mean of each coefficient, set to
 zero when the 95%, 90% or 80% credible interval covers zero. The 80% intervals
 are the ones used for gene selection in the data applications of the paper.
+A predictor is selected when its entry is nonzero.
 
 ```{r credible-interval, eval = FALSE}
+which(fit_one$CI95 != 0)
+which(fit_one$CI90 != 0)
 which(fit_one$CI80 != 0)
 ```
 

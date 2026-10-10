@@ -43,6 +43,53 @@ iteration count every \code{k} iterations.
 The inputs are checked before sampling: the arrays must have matching
 dimensions, and the \code{NA} padding of the replicates must be left-packed and
 identical for all observations.
+
+For large grids, \code{badgers_mcmc()} can be run for each \code{(mu, nu)} pair
+in parallel. A complete template that works on Windows, macOS and Linux is
+installed with the package and can be found with
+\code{system.file("examples", "parallel-runs.R", package = "badgers")}; it is
+also described in the parallel-runs vignette.
+}
+\examples{
+library(badgers)
+
+sim <- dg(
+  seed = 123,
+  p = 30,
+  g = 5,
+  gsm = 8,
+  ntrain = 40,
+  ntune = 40,
+  ntest = 40,
+  sigma2 = 2,
+  rho2 = 2,
+  num_rep = 3,
+  qmin = 4,
+  qmax = 6,
+  edii = 0.6,
+  ediu = 0,
+  eduu = 0.3,
+  Gmode = 0,
+  Gthres = 1
+)
+
+fit <- badgers_mcmc(
+  ytrain = sim$y, Wtrain = sim$W,
+  ytune = sim$ytune, Wtune = sim$Wtune,
+  ytest = sim$ytest, Wtest = sim$Wtest,
+  adj_graph = sim$graph,
+  mu = 3,
+  nu = 3,
+  n_iter = 10000,
+  burnin = 5000
+)
+
+cat("Tuning MSPE:", fit$MSPE_tune, "\n")
+cat("Test MSPE:", fit$MSPE_test, "\n")
+cat("True nonzero coefficients:", which(sim$beta != 0), "\n")
+cat("Selected by 95\% interval:", which(fit$CI95 != 0), "\n")
+cat("Selected by 90\% interval:", which(fit$CI90 != 0), "\n")
+cat("Selected by 80\% interval:", which(fit$CI80 != 0), "\n")
 }
 \references{
 Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. A Graph-Guided Bayesian Regression Model for High-Dimensional Data with Replicated Covariates and Measurement Error. Manuscript.
