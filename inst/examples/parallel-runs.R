@@ -4,9 +4,10 @@
 ## the (mu, nu) grid in parallel by calling badgers_mcmc() directly. It then
 ## refines the grid around the coarse optimum, as in the paper workflow.
 ##
-## It uses the paper settings (10000 iterations, 5000 burn-in), so each
-## (mu, nu) run takes tens of seconds on a small problem; the 34 runs are
-## spread over the available cores.
+## It uses a PSOCK cluster from the parallel package, which works on Windows,
+## macOS and Linux. It uses the paper settings (10000 iterations, 5000
+## burn-in), so each (mu, nu) run takes tens of seconds on a small problem;
+## the 34 runs are spread over the available cores.
 
 ## Optional: uncomment if you use a custom R library on a cluster.
 ## .libPaths("~/rlibs")
@@ -46,10 +47,12 @@ if (!dir.exists(out_dir)) {
   dir.create(out_dir, recursive = TRUE)
 }
 
-RNGkind("L'Ecuyer-CMRG")
-set.seed(seed)
+## Workers do not share memory with this session, so run_one() takes
+## everything it needs as arguments.
+run_one <- function(i, grid, tag, sim, out_dir, n_iter, burnin) {
+  mu_i <- grid$mu[i]
+  nu_i <- grid$nu[i]
 
-run_one <- function(mu_i, nu_i, tag) {
   tryCatch({
     out_file <- file.path(out_dir, sprintf("%s_mu%g_nu%g.rds", tag, mu_i, nu_i))
 
@@ -59,7 +62,7 @@ run_one <- function(mu_i, nu_i, tag) {
       return(NULL)
     }
 
-    fit <- badgers_mcmc(
+    fit <- badgers::badgers_mcmc(
       ytrain = sim$y, Wtrain = sim$W,
       ytune = sim$ytune, Wtune = sim$Wtune,
       ytest = sim$ytest, Wtest = sim$Wtest,
@@ -89,14 +92,26 @@ run_one <- function(mu_i, nu_i, tag) {
   })
 }
 
-run_grid <- function(grid, tag) {
-  n_cores <- min(nrow(grid), detectCores())
+## ---- Start the cluster ----
+n_cores <- detectCores()
+if (is.na(n_cores)) n_cores <- 2
+n_workers <- max(1, min(n_cores - 1, 25))
 
-  mclapply(
+cl <- makeCluster(n_workers)
+
+## Use the same library paths as this session, load badgers on the workers,
+## and give each worker its own reproducible random number stream.
+invisible(clusterCall(cl, function(paths) .libPaths(paths), .libPaths()))
+clusterEvalQ(cl, library(badgers))
+clusterSetRNGStream(cl, seed)
+
+run_grid <- function(grid, tag) {
+  parLapplyLB(
+    cl,
     seq_len(nrow(grid)),
-    function(i) run_one(grid$mu[i], grid$nu[i], tag),
-    mc.cores = n_cores,
-    mc.set.seed = TRUE
+    run_one,
+    grid = grid, tag = tag, sim = sim, out_dir = out_dir,
+    n_iter = n_iter, burnin = burnin
   )
 
   res <- lapply(seq_len(nrow(grid)), function(i) {
@@ -132,6 +147,8 @@ fine_grid <- expand.grid(
 )
 fine_res <- run_grid(fine_grid, "fine")
 fine_table <- summarize(fine_res)
+
+stopCluster(cl)
 
 best_idx <- which.min(fine_table$MSPE_tune)
 best <- fine_res[[best_idx]]

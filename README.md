@@ -57,7 +57,8 @@ matrix.
 
 `badgers()` evaluates the `(mu, nu)` grid serially. For large analyses,
 run fixed-`(mu, nu)` jobs in parallel with `badgers_mcmc()` and combine
-the MSPE results afterward. See the parallel-runs vignette and the
+the MSPE results afterward. The example uses the `parallel` package and
+runs on Windows, macOS and Linux. See the parallel-runs vignette and the
 installed example:
 
 ``` r
