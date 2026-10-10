@@ -1,0 +1,7 @@
+^badgers\\.Rproj$
+^\\.Rproj\\.user$
+^\\.git$
+^\\.github$
+^\\.gitignore$
+^README\\.Rmd$
+^LICENSE\\.md$

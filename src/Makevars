@@ -1,0 +1,4 @@
+## -ffp-contract=off is required for the sampler to reproduce R's floating
+## point arithmetic bit-for-bit (see the header of badgers.cpp).
+PKG_CXXFLAGS = -ffp-contract=off
+PKG_LIBS = $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)

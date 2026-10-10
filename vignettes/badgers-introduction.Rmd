@@ -1,0 +1,142 @@
+---
+title: "badgers-introduction"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{badgers-introduction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+library(badgers)
+```
+
+# Introduction
+
+The BADGERS package provides tools for Bayesian regression with
+high-dimensional predictors that are observed with measurement error through
+replicate measurements and that are linked by a known or partially known graph.
+The main workflow samples the latent predictors, the regression coefficients,
+the measurement error variance and the graph-informed shrinkage parameters
+jointly through an MCMC sampler.
+
+The package implements:
+
+1. `badgers()`  
+  The primary user-facing function. It fits a grid of `(mu, nu)` values and
+  selects the final pair using the validation mean squared prediction error
+  (MSPE).
+
+2. `badgers_mcmc()`  
+  The fixed-`(mu, nu)` sampler used internally by `badgers()`. This is useful
+  for large-scale parallel workflows where each grid point is run separately.
+
+3. `dg()` and `dg_batch()`  
+  Simulation utilities that generate data sets with a true or noisy working
+  graph.
+
+This vignette outlines the expected data format and the basic model-fitting
+interface.
+
+# Simulation Setup
+
+`badgers` expects, for each of the training, validation (tuning) and test
+sets, a response vector of length `n` and a three-dimensional array of
+replicate measurements with dimension `num_rep` by `n` by `p`. The working
+graph is a `p` by `p` 0/1 adjacency matrix.
+
+The following example simulates a setting with `p = 30` predictors in 5
+pathways, three replicates per predictor and a sparse response.
+
+```{r simulation-setup, eval = FALSE}
+library(badgers)
+
+seed <- 123
+
+n <- 40
+p <- 30
+burnin <- 150
+n_iter <- 300
+```
+
+The simulated data are generated with `dg()`. Setting `Gmode = 0` gives the
+sampler the true graph; `Gmode = 1` with `Gthres = 0.75` keeps 75% of the true
+edges and fills the rest with random edges.
+
+```{r simulate-data, eval = FALSE}
+sim <- dg(
+  seed = seed,
+  p = p,
+  g = 5,
+  gsm = 8,
+  ntrain = n,
+  ntune = n,
+  ntest = n,
+  sigma2 = 2,
+  rho2 = 2,
+  num_rep = 3,
+  qmin = 4,
+  qmax = 6,
+  edii = 0.6,
+  ediu = 0,
+  eduu = 0.3,
+  Gmode = 0,
+  Gthres = 1
+)
+
+beta_true <- sim$beta
+```
+
+# Running BADGERS
+
+Use `badgers()` to fit the `(mu, nu)` grid and select the pair with the
+smallest validation MSPE. The example below searches over `mu, nu` in
+`{1, 3, 5}` and reports the test MSPE and the selected predictors.
+
+```{r badgers-fit, eval = FALSE}
+fit <- badgers(
+  ytrain = sim$y, Wtrain = sim$W,
+  ytune = sim$ytune, Wtune = sim$Wtune,
+  ytest = sim$ytest, Wtest = sim$Wtest,
+  adj_graph = sim$graph,
+  mu_grid = c(1, 3, 5),
+  nu_grid = c(1, 3, 5),
+  n_iter = n_iter,
+  burnin = burnin
+)
+
+print(fit)
+
+fit$best_result$MSPE_test
+which(fit$best_result$CI95 != 0)
+which(beta_true != 0)
+```
+
+# Fixed-(mu, nu) MCMC
+
+For a single fixed `(mu, nu)`, call `badgers_mcmc()` directly:
+
+```{r fixed-mu-nu, eval = FALSE}
+fit_one <- badgers_mcmc(
+  ytrain = sim$y, Wtrain = sim$W,
+  ytune = sim$ytune, Wtune = sim$Wtune,
+  ytest = sim$ytest, Wtest = sim$Wtest,
+  adj_graph = sim$graph,
+  mu = 3,
+  nu = 3,
+  n_iter = n_iter,
+  burnin = burnin
+)
+```
+
+The paper settings are `n_iter = 10000` and `burnin = 5000`, which are the
+defaults. For large grids, see the `parallel-runs` vignette for a template that
+runs fixed-`(mu, nu)` jobs in parallel and combines the MSPE values afterward.
+
+# References
+
+References will be added after the manuscript is available.

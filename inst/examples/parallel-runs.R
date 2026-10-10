@@ -1,0 +1,141 @@
+## Parallel BADGERS runs
+##
+## This example mirrors the small runnable example in ?badgers, but evaluates
+## the (mu, nu) grid in parallel by calling badgers_mcmc() directly. It then
+## refines the grid around the coarse optimum, as in the paper workflow.
+
+## Optional: uncomment if you use a custom R library on a cluster.
+## .libPaths("~/rlibs")
+
+library(badgers)
+library(parallel)
+
+seed <- 123
+
+n <- 40
+p <- 30
+burnin <- 150
+n_iter <- 300
+
+sim <- dg(
+  seed = seed,
+  p = p,
+  g = 5,
+  gsm = 8,
+  ntrain = n,
+  ntune = n,
+  ntest = n,
+  sigma2 = 2,
+  rho2 = 2,
+  num_rep = 3,
+  qmin = 4,
+  qmax = 6,
+  edii = 0.6,
+  ediu = 0,
+  eduu = 0.3,
+  Gmode = 0,
+  Gthres = 1
+)
+
+out_dir <- file.path(tempdir(), "badgers_parallel_example")
+if (!dir.exists(out_dir)) {
+  dir.create(out_dir, recursive = TRUE)
+}
+
+RNGkind("L'Ecuyer-CMRG")
+set.seed(seed)
+
+run_one <- function(mu_i, nu_i, tag) {
+  tryCatch({
+    out_file <- file.path(out_dir, sprintf("%s_mu%g_nu%g.rds", tag, mu_i, nu_i))
+
+    if (file.exists(out_file)) {
+      message(sprintf("mu %g nu %g already exists, skipping: %s",
+                      mu_i, nu_i, out_file))
+      return(NULL)
+    }
+
+    fit <- badgers_mcmc(
+      ytrain = sim$y, Wtrain = sim$W,
+      ytune = sim$ytune, Wtune = sim$Wtune,
+      ytest = sim$ytest, Wtest = sim$Wtest,
+      adj_graph = sim$graph,
+      mu = mu_i,
+      nu = nu_i,
+      n_iter = n_iter,
+      burnin = burnin
+    )
+
+    tmp_file <- paste0(out_file, ".tmp")
+    saveRDS(
+      list(
+        mu = mu_i, nu = nu_i,
+        MSPE_tune = fit$MSPE_tune, MSPE_test = fit$MSPE_test,
+        CI95 = fit$CI95, beta_mean = fit$beta_mean
+      ),
+      file = tmp_file
+    )
+    file.rename(tmp_file, out_file)
+
+    invisible(NULL)
+  }, error = function(e) {
+    message(sprintf("ERROR: mu %g nu %g failed: %s", mu_i, nu_i, e$message))
+    invisible(NULL)
+  })
+}
+
+run_grid <- function(grid, tag) {
+  n_cores <- min(nrow(grid), detectCores())
+
+  mclapply(
+    seq_len(nrow(grid)),
+    function(i) run_one(grid$mu[i], grid$nu[i], tag),
+    mc.cores = n_cores,
+    mc.set.seed = TRUE
+  )
+
+  res <- lapply(seq_len(nrow(grid)), function(i) {
+    f <- file.path(out_dir, sprintf("%s_mu%g_nu%g.rds", tag, grid$mu[i], grid$nu[i]))
+    if (file.exists(f)) readRDS(f) else NULL
+  })
+  res[!vapply(res, is.null, logical(1))]
+}
+
+summarize <- function(res) {
+  data.frame(
+    mu = vapply(res, `[[`, numeric(1), "mu"),
+    nu = vapply(res, `[[`, numeric(1), "nu"),
+    MSPE_tune = vapply(res, `[[`, numeric(1), "MSPE_tune"),
+    MSPE_test = vapply(res, `[[`, numeric(1), "MSPE_test")
+  )
+}
+
+## ---- Step 1: coarse grid ----
+coarse_grid <- expand.grid(mu = c(1, 3, 5), nu = c(1, 3, 5))
+coarse_res <- run_grid(coarse_grid, "coarse")
+coarse_table <- summarize(coarse_res)
+coarse_best <- coarse_table[which.min(coarse_table$MSPE_tune), ]
+
+## ---- Step 2: fine grid centered at the coarse optimum ----
+make_fine_values <- function(center) {
+  seq(from = max(0.5, center - 1), to = center + 1, by = 0.5)
+}
+
+fine_grid <- expand.grid(
+  mu = make_fine_values(coarse_best$mu),
+  nu = make_fine_values(coarse_best$nu)
+)
+fine_res <- run_grid(fine_grid, "fine")
+fine_table <- summarize(fine_res)
+
+best_idx <- which.min(fine_table$MSPE_tune)
+best <- fine_res[[best_idx]]
+
+print(coarse_table)
+print(fine_table)
+cat("Selected mu:", best$mu, "\n")
+cat("Selected nu:", best$nu, "\n")
+cat("Tuning MSPE:", best$MSPE_tune, "\n")
+cat("Test MSPE:", best$MSPE_test, "\n")
+cat("True nonzero coefficients:", which(sim$beta != 0), "\n")
+cat("Selected by 95% interval:", which(best$CI95 != 0), "\n")

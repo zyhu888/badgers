@@ -1,0 +1,33 @@
+Package: badgers
+Title: Bayesian Graph-Informed Regression with Measurement Error in Predictors
+Version: 0.1.0
+Authors@R: c(
+    person("Zeyu", "Hu", email = "zeyu.hu8888@gmail.com", role = c("aut", "cre"))
+    )
+Author: Zeyu Hu [aut, cre]
+Maintainer: Zeyu Hu <zeyu.hu8888@gmail.com>
+Description: R package for BADGERS, a Bayesian regression method for
+    high-dimensional predictors that are observed with measurement error
+    through replicate measurements and that are linked by a known or
+    partially known graph. It provides an Rcpp-based Markov chain Monte Carlo
+    sampler, tuning of the graph-related hyperparameters over a (mu, nu) grid
+    using the validation mean squared prediction error, and simulation
+    utilities for generating data with a true or noisy working graph.
+Depends: R (>= 4.0.0)
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+Imports:
+    Matrix,
+    Rcpp,
+    stats
+LinkingTo:
+    Rcpp,
+    RcppArmadillo
+URL: https://github.com/zyhu888/badgers
+BugReports: https://github.com/zyhu888/badgers/issues
+Suggests:
+    knitr,
+    parallel,
+    rmarkdown
+VignetteBuilder: knitr
