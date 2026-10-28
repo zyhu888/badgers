@@ -914,7 +914,8 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
                   double a_iota, double b_iota,
                   double a_rho, double b_rho,
                   double eta, double epsilon, double mu, double nu,
-                  double c_graph = 2.0, bool lite = true) {
+                  double c_graph = 2.0, bool lite = true,
+                  bool verbose = false) {
 
   if (!R_FINITE(c_graph) || c_graph <= 0 || c_graph >= 6) {
     stop("c_graph must be a finite scalar strictly between 0 and 6");
@@ -1138,7 +1139,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
       alpha_sd_prop = out["alpha_sd_prop"];
       NumericVector r_col = out["r_alpha_col"];
       for (int j = 0; j < p; ++j) r_alpha(j, s - 1) = r_col[j];
-      Rcpp::Rcout << i << "\n";
+      if (verbose) Rcpp::Rcout << i << "\n";
     }
 
     // ---- save tuning/test posterior ----

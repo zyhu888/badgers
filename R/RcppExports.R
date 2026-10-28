@@ -45,7 +45,7 @@ adapt_alpha_sd_cpp <- function(acs_alpha, i, k, c1, r_opt, alpha_sd_prop) {
     .Call(`_badgers_adapt_alpha_sd_cpp`, acs_alpha, i, k, c1, r_opt, alpha_sd_prop)
 }
 
-badgers_mcmc_cpp <- function(ytrain, Wtrain_, ytune, Wtune_, ytest, Wtest_, adj_graph, n_iter, burnin, k, a_sigma, b_sigma, a_iota, b_iota, a_rho, b_rho, eta, epsilon, mu, nu, c_graph = 2.0, lite = TRUE) {
-    .Call(`_badgers_badgers_mcmc_cpp`, ytrain, Wtrain_, ytune, Wtune_, ytest, Wtest_, adj_graph, n_iter, burnin, k, a_sigma, b_sigma, a_iota, b_iota, a_rho, b_rho, eta, epsilon, mu, nu, c_graph, lite)
+badgers_mcmc_cpp <- function(ytrain, Wtrain_, ytune, Wtune_, ytest, Wtest_, adj_graph, n_iter, burnin, k, a_sigma, b_sigma, a_iota, b_iota, a_rho, b_rho, eta, epsilon, mu, nu, c_graph = 2.0, lite = TRUE, verbose = FALSE) {
+    .Call(`_badgers_badgers_mcmc_cpp`, ytrain, Wtrain_, ytune, Wtune_, ytest, Wtest_, adj_graph, n_iter, burnin, k, a_sigma, b_sigma, a_iota, b_iota, a_rho, b_rho, eta, epsilon, mu, nu, c_graph, lite, verbose)
 }
 

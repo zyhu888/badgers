@@ -84,7 +84,8 @@ badgers_mcmc <- function(
     eta = 10,
     epsilon = 0.2,
     c_graph = 2,
-    lite = TRUE
+    lite = TRUE,
+    verbose = FALSE
 ) {
 
   check_badgers_inputs(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph)
@@ -97,7 +98,8 @@ badgers_mcmc <- function(
     n_iter = n_iter, burnin = burnin, k = k,
     a_sigma = a_sigma, b_sigma = b_sigma, a_iota = a_iota, b_iota = b_iota,
     a_rho = a_rho, b_rho = b_rho, eta = eta, epsilon = epsilon,
-    mu = mu, nu = nu, c_graph = c_graph, lite = lite
+    mu = mu, nu = nu, c_graph = c_graph, lite = lite,
+    verbose = verbose
   )
 
   end.time <- Sys.time()
@@ -165,7 +167,7 @@ badgers <- function(
         a_rho = a_rho, b_rho = b_rho,
         eta = eta, epsilon = epsilon,
         mu = mu_grid[a], nu = nu_grid[b],
-        c_graph = c_graph, lite = lite
+        c_graph = c_graph, lite = lite, verbose = FALSE
       ),
       error = function(e) {
         if (verbose) cat("ERROR:", conditionMessage(e), "\n")

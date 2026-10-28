@@ -69,8 +69,8 @@ seed <- 123
 
 n <- 40
 p <- 30
-burnin <- 5000
-n_iter <- 10000
+burnin <- 500
+n_iter <- 1000
 ```
 
 The simulated data are generated with `dg()`, whose defaults are the settings
@@ -155,7 +155,8 @@ cat("Selected by 80% interval:", which(fit_one$CI80 != 0), "\n")
 ```
 
 The paper settings are `n_iter = 10000` and `burnin = 5000`, which are the
-defaults and are used throughout this vignette. For large grids, see the `parallel-runs` vignette for a template that
+defaults of `badgers()` and `badgers_mcmc()`. This vignette uses 1000 and 500
+to keep the run time short; use the defaults for real analyses. For large grids, see the `parallel-runs` vignette for a template that
 runs fixed-`(mu, nu)` jobs in parallel and combines the MSPE values afterward.
 
 # Selecting Predictors

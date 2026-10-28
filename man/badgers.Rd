@@ -27,7 +27,7 @@ badgers(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph,
 \item{a_rho, b_rho}{Shape and scale of the inverse-Gamma prior on the measurement error variance \eqn{\rho^2}.}
 \item{eta, epsilon}{Shape control \eqn{\eta} and scale control \eqn{\zeta} (called \code{epsilon} here) of the constrained Wishart prior on the precision matrix of the log-shrinkage parameters.}
 \item{c_graph}{Strength of the graph information, a scalar strictly between 0 and 6. The off-diagonal rates of the \eqn{\iota_{jk}} prior are \eqn{d_{jk}^{-1} 10^{-6 + c}}, where \eqn{d_{jk}} is the shortest-path distance between predictors \eqn{j} and \eqn{k} in \code{adj_graph}, and \eqn{10^{-6}} if they are not connected.}
-\item{verbose}{Logical; print progress messages.}
+\item{verbose}{Logical; print one line per \code{(mu, nu)} grid point. The sampler itself is always silent here.}
 \item{lite}{Logical; if \code{TRUE}, full parameter traces are not stored.}
 }
 \value{
@@ -58,8 +58,9 @@ predictors receive related shrinkage. The hyperparameters \code{mu} and
 \code{nu} are tuned on the grid.
 
 The defaults of the other arguments are the settings used in the paper:
-10000 iterations with 5000 burn-in iterations (also used in the example), and the coarse grid
-\code{c(1, 3, 5, 7, 9)} for both \code{mu} and \code{nu}. A fine grid around the
+10000 iterations with 5000 burn-in iterations, and the coarse grid
+\code{c(1, 3, 5, 7, 9)} for both \code{mu} and \code{nu}. The examples use 1000 iterations
+with 500 burn-in iterations to keep the run time short. A fine grid around the
 coarse optimum can be searched in a second call.
 
 For large grids, \code{badgers_mcmc()} can be run for each \code{(mu, nu)} pair
@@ -103,8 +104,8 @@ fit <- badgers(
   adj_graph = sim$graph,
   mu_grid = c(1, 3),
   nu_grid = c(1, 3),
-  n_iter = 10000,
-  burnin = 5000,
+  n_iter = 1000,
+  burnin = 500,
   verbose = FALSE
 )
 

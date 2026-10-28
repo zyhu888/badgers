@@ -5,9 +5,10 @@
 ## refines the grid around the coarse optimum, as in the paper workflow.
 ##
 ## It uses a PSOCK cluster from the parallel package, which works on Windows,
-## macOS and Linux. It uses the paper settings (10000 iterations, 5000
-## burn-in), so each (mu, nu) run takes tens of seconds on a small problem;
-## the 34 runs are spread over the available cores.
+## macOS and Linux. It uses 1000 iterations with 500 burn-in to keep the run
+## short; the 34 runs are spread over the available cores. For real analyses
+## use the defaults of badgers_mcmc(), which are the paper settings (10000
+## iterations, 5000 burn-in).
 
 ## Optional: uncomment if you use a custom R library on a cluster.
 ## .libPaths("~/rlibs")
@@ -19,8 +20,8 @@ seed <- 123
 
 n <- 40
 p <- 30
-burnin <- 5000
-n_iter <- 10000
+burnin <- 500
+n_iter <- 1000
 
 sim <- dg(
   seed = seed,
