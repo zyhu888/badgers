@@ -91,6 +91,16 @@ record_cpp_results <- function(lib, output) {
       capture(name, seed + 1000L, do.call(badgers_mcmc, args), "chain")
     }
   }
+  # Match the default 10000/5000 sampling schedule at manageable dimensions.
+  for (p in c(8L, 30L)) {
+    sim <- dg(41, p = p, g = 1, gsm = 0, qmin = 2, qmax = 2,
+              ntrain = 12, ntune = 8, ntest = 6)
+    adj <- matrix(1, p, p)
+    capture(paste0("chain/long_p", p), 1041,
+            badgers_mcmc(sim$y, sim$W, sim$ytune, sim$Wtune, sim$ytest, sim$Wtest,
+                         adj, mu = 3, nu = 3, n_iter = 10000, burnin = 5000,
+                         lite = p > 8L), "chain")
+  }
   sim <- dg(321, p = 42, g = 1, gsm = 0, qmin = 2, qmax = 2,
             ntrain = 12, ntune = 8, ntest = 6)
   adj <- matrix(0, 42, 42)
@@ -133,10 +143,10 @@ compare_cpp_results <- function(baseline, candidate, output) {
     } else {
       abs_error <- scaled_error <- 0
       numerical <- is.numeric(x) && !exact
-      if (numerical && !same) {
+      if (numerical) {
         if (length(x) != length(y) || any(!is.finite(x)) || any(!is.finite(y))) {
           abs_error <- scaled_error <- Inf
-        } else {
+        } else if (!same) {
           abs_error <- max(abs(x - y), 0)
           scaled_error <- max(abs(x - y) / pmax(1, abs(x), abs(y)), 0)
         }
