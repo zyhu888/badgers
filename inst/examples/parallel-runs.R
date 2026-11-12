@@ -16,6 +16,7 @@
 library(badgers)
 library(parallel)
 
+run_parallel_example <- function() {
 seed <- 123
 
 n <- 40
@@ -50,11 +51,12 @@ if (!dir.exists(out_dir)) {
 
 ## Workers do not share memory with this session, so run_one() takes
 ## everything it needs as arguments.
-run_one <- function(i, grid, tag, sim, out_dir, n_iter, burnin) {
+run_one <- function(i, grid, tag, sim, out_dir, n_iter, burnin, seed_base) {
   mu_i <- grid$mu[i]
   nu_i <- grid$nu[i]
 
   tryCatch({
+    set.seed(seed_base + i)
     out_file <- file.path(out_dir, sprintf("%s_mu%g_nu%g.rds", tag, mu_i, nu_i))
 
     if (file.exists(out_file)) {
@@ -84,7 +86,7 @@ run_one <- function(i, grid, tag, sim, out_dir, n_iter, burnin) {
       ),
       file = tmp_file
     )
-    file.rename(tmp_file, out_file)
+    if (!file.rename(tmp_file, out_file)) stop("Could not finalize result file.")
 
     invisible(NULL)
   }, error = function(e) {
@@ -99,9 +101,10 @@ if (is.na(n_cores)) n_cores <- 2
 n_workers <- max(1, min(n_cores - 1, 25))
 
 cl <- makeCluster(n_workers)
+on.exit(stopCluster(cl), add = TRUE)
 
-## Use the same library paths as this session, load badgers on the workers,
-## and give each worker its own reproducible random number stream.
+## Use the same library paths as this session and load badgers on the workers.
+## Task seeds below make results independent of worker scheduling.
 invisible(clusterCall(cl, function(paths) .libPaths(paths), .libPaths()))
 clusterEvalQ(cl, library(badgers))
 clusterSetRNGStream(cl, seed)
@@ -112,14 +115,17 @@ run_grid <- function(grid, tag) {
     seq_len(nrow(grid)),
     run_one,
     grid = grid, tag = tag, sim = sim, out_dir = out_dir,
-    n_iter = n_iter, burnin = burnin
+    n_iter = n_iter, burnin = burnin,
+    seed_base = seed + if (tag == "coarse") 1000L else 2000L
   )
 
   res <- lapply(seq_len(nrow(grid)), function(i) {
     f <- file.path(out_dir, sprintf("%s_mu%g_nu%g.rds", tag, grid$mu[i], grid$nu[i]))
     if (file.exists(f)) readRDS(f) else NULL
   })
-  res[!vapply(res, is.null, logical(1))]
+  res <- res[!vapply(res, is.null, logical(1))]
+  if (!length(res)) stop("All grid points failed; inspect the worker messages.")
+  res
 }
 
 summarize <- function(res) {
@@ -149,7 +155,6 @@ fine_grid <- expand.grid(
 fine_res <- run_grid(fine_grid, "fine")
 fine_table <- summarize(fine_res)
 
-stopCluster(cl)
 
 best_idx <- which.min(fine_table$MSPE_tune)
 best <- fine_res[[best_idx]]
@@ -161,3 +166,8 @@ cat("True nonzero coefficients:", which(sim$beta != 0), "\n")
 cat("Selected by 95% interval:", which(best$CI95 != 0), "\n")
 cat("Selected by 90% interval:", which(best$CI90 != 0), "\n")
 cat("Selected by 80% interval:", which(best$CI80 != 0), "\n")
+
+  invisible(best)
+}
+
+run_parallel_example()
