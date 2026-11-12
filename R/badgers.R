@@ -123,6 +123,31 @@ check_badgers_inputs <- function(ytrain, Wtrain, ytune, Wtune, ytest, Wtest,
 }
 
 
+## Summarize retained draws in R using the documented quantile convention.
+summarize_badgers_draws <- function(draws, ytune, ytest, burnin) {
+  keep <- seq.int(burnin + 1L, ncol(draws$BETA))
+  beta_post <- draws$BETA[, keep, drop = FALSE]
+  beta_mean <- rowMeans(beta_post)
+  bounds <- apply(beta_post, 1, stats::quantile,
+                  probs = c(0.025, 0.05, 0.10, 0.90, 0.95, 0.975),
+                  type = 7, names = FALSE)
+  threshold <- function(lower, upper) {
+    estimate <- beta_mean
+    estimate[lower <= 0 & upper >= 0] <- 0
+    estimate
+  }
+  tune_mean <- rowMeans(draws$Ytune_hat[, keep, drop = FALSE])
+  test_mean <- rowMeans(draws$Ytest_hat[, keep, drop = FALSE])
+  c(list(CI95 = threshold(bounds[1, ], bounds[6, ]),
+         CI90 = threshold(bounds[2, ], bounds[5, ]),
+         CI80 = threshold(bounds[3, ], bounds[4, ]),
+         MSPE_test = mean((ytest - test_mean)^2),
+         MSPE_tune = mean((ytune - tune_mean)^2)),
+    draws[c("mu", "nu", "c_graph", "BETA", "r_alpha", "acs_alpha", "alpha_sd_prop")],
+    list(beta_mean = beta_mean),
+    draws[c("Xtrain", "Xtune", "Xtest", "IOTA", "SIGMA2", "ALPHA", "RHO2", "TAU", "GAMMA")])
+}
+
 #' Run the BADGERS MCMC Sampler
 #'
 #' @description Runs the fixed-\code{(mu, nu)} BADGERS Markov chain Monte Carlo sampler.
@@ -298,14 +323,15 @@ badgers_mcmc <- function(
   start.time <- Sys.time()
 
   out <- badgers_mcmc_cpp(
-    ytrain = ytrain, Wtrain_ = Wtrain, ytune = ytune, Wtune_ = Wtune,
-    ytest = ytest, Wtest_ = Wtest, adj_graph = adj_graph,
-    n_iter = n_iter, burnin = burnin, k = k,
+    ytrain = ytrain, Wtrain_ = Wtrain, Wtune_ = Wtune, Wtest_ = Wtest,
+    adj_graph = adj_graph, n_iter = n_iter, k = k,
     a_sigma = a_sigma, b_sigma = b_sigma, a_iota = a_iota, b_iota = b_iota,
     a_rho = a_rho, b_rho = b_rho, eta = eta, epsilon = epsilon,
     mu = mu, nu = nu, c_graph = c_graph, lite = lite,
     verbose = verbose
   )
+
+  out <- summarize_badgers_draws(out, ytune, ytest, burnin)
 
   end.time <- Sys.time()
   out$time <- as.numeric(difftime(end.time, start.time, units = "mins"))

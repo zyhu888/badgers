@@ -96,3 +96,32 @@ test_that("grid selection matches fixed runs and preserves failures", {
   args$mu_grid <- 0
   expect_error(do.call(badgers, args), "First error: deliberate")
 })
+
+test_that("posterior summaries exclude burn-in and preserve the public structure", {
+  draws <- list(mu = 1, nu = 2, c_graph = 2,
+                BETA = rbind(c(99, 1, 2, 3, 4), c(99, -2, 0, 1, 3),
+                             c(99, -4, -3, -2, -1)),
+                r_alpha = matrix(numeric(), 3, 0), acs_alpha = matrix(0, 3, 5),
+                alpha_sd_prop = rep(1, 3), Xtrain = NULL, Xtune = NULL,
+                Xtest = NULL, IOTA = NULL, SIGMA2 = NULL, ALPHA = NULL,
+                RHO2 = NULL, TAU = NULL, GAMMA = NULL,
+                Ytune_hat = rbind(c(99, 1, 2, 3, 4), c(99, 2, 4, 6, 8)),
+                Ytest_hat = matrix(c(99, 0, 0, 0, 0), 1))
+  set.seed(777)
+  rng <- .Random.seed
+  out <- badgers:::summarize_badgers_draws(draws, c(3, 6), 2, burnin = 1)
+  expect_identical(.Random.seed, rng)
+  expect_equal(out$beta_mean, c(2.5, 0.5, -2.5))
+  expect_equal(out$CI95, c(2.5, 0, -2.5))
+  expect_equal(out$CI90, c(2.5, 0, -2.5))
+  expect_equal(out$CI80, c(2.5, 0, -2.5))
+  expect_equal(out$MSPE_tune, 0.625)
+  expect_equal(out$MSPE_test, 4)
+  expect_identical(out$BETA, draws$BETA)
+  expect_null(out$Ytune_hat)
+  expect_null(out$Ytest_hat)
+  expect_identical(names(out), c("CI95", "CI90", "CI80", "MSPE_test", "MSPE_tune",
+                                "mu", "nu", "c_graph", "BETA", "r_alpha", "acs_alpha",
+                                "alpha_sd_prop", "beta_mean", "Xtrain", "Xtune",
+                                "Xtest", "IOTA", "SIGMA2", "ALPHA", "RHO2", "TAU", "GAMMA"))
+})

@@ -5,19 +5,8 @@
 #include <queue>
 using namespace Rcpp;
 
-// Bit-exact Rcpp port of utility_v2.R (verified with identical() against the
-// R implementation, on both macOS and the Linux deployment target).
-//
-// Must compile with -ffp-contract=off (e.g. Sys.setenv(PKG_CXXFLAGS =
-// "-ffp-contract=off") before sourceCpp()). Without it the compiler fuses
-// expressions like a*a - b*b into one rounding step, which rounds
-// differently from R's separate multiply/subtract steps.
-//
-// Manual ports of R's sum()/mean()/rowMeans() use `long double` accumulators
-// to match R's own internal LDOUBLE accumulation (src/main/summary.c,
-// array.c). On ARM64 (long double == double) this makes no difference, but
-// on x86_64 long double is genuine 80-bit precision and this is required
-// for bit-exactness.
+// Sampler updates use Armadillo for linear algebra and R's RNG for draws.
+// Keep draw order stable so numerical changes can be compared under a fixed seed.
 #ifdef __clang__
 #pragma clang fp contract(off)
 #endif
@@ -44,7 +33,7 @@ double p_density_mmh_cpp(double alpha_j_prop, double alpha_j, double tau_j,
   // replaced by alpha_j_prop; for k != j0, alpha[k]+alpha_aug[k] == 2*alpha[k]
   // exactly (IEEE754 doubling), so alpha_aug is never materialized.
   double two_mu = 2.0 * mu;
-  std::vector<double> vec(p);
+  arma::vec vec(p);
   for (int k = 0; k < p; ++k) {
     vec[k] = (k == j0) ? (alpha[j0] + alpha_j_prop - two_mu)
                        : (alpha[k] + alpha[k] - two_mu);
@@ -53,160 +42,14 @@ double p_density_mmh_cpp(double alpha_j_prop, double alpha_j, double tau_j,
   // comp3 = exp((-1/(2*nu)) * (alpha_j_prop - alpha_j) * (phi_j %*% vec))
   // phi_j = phi[j, ] is read directly from phi's column-major storage with
   // stride p (no row copy needed).
-  arma::blas_int bn = p, binc_phi = p, binc_vec = 1;
-  double quad = arma::ddot_(&bn, phi.begin() + j0, &binc_phi, vec.data(), &binc_vec);
+  arma::mat phi_view(phi.begin(), p, p, false, true);
+  double quad = arma::dot(phi_view.row(j0), vec);
   double comp3 = std::exp((-1.0 / (2.0 * nu)) * (alpha_j_prop - alpha_j) * quad);
 
   return comp1 * comp2 * comp3;
 }
 
-// BLAS/LAPACK-backed helpers matching R's %*%/crossprod/tcrossprod/chol2inv/
-// solve() bit-for-bit. Armadillo's own dot()/operator*/dgetri diverge from R
-// on small matrices, so these call the underlying BLAS/LAPACK routines
-// directly instead of going through Armadillo's higher-level API.
-namespace badgers_blas {
-
-// A %*% x
-inline arma::vec matvec(const arma::mat &A, const arma::vec &x) {
-  arma::vec y(A.n_rows, arma::fill::zeros);
-  char trans = 'N';
-  arma::blas_int m = A.n_rows, n = A.n_cols, lda = A.n_rows, incx = 1, incy = 1;
-  double alpha = 1.0, beta = 0.0;
-  if (m == 0 || n == 0) return y;
-  arma::dgemv_(&trans, &m, &n, &alpha, const_cast<double*>(A.memptr()), &lda,
-               const_cast<double*>(x.memptr()), &incx, &beta, y.memptr(), &incy,
-               (arma::blas_len)1);
-  return y;
-}
-
-// tcrossprod(x) == x %*% t(x)
-inline arma::mat outer(const arma::vec &x) {
-  arma::blas_int n = x.n_elem, k = 1;
-  arma::mat M(n, n, arma::fill::zeros);
-  if (n == 0) return M;
-  char transa = 'N', transb = 'T';
-  double alpha = 1.0, beta = 0.0;
-  arma::dgemm_(&transa, &transb, &n, &n, &k, &alpha, const_cast<double*>(x.memptr()), &n,
-               const_cast<double*>(x.memptr()), &n, &beta, M.memptr(), &n,
-               (arma::blas_len)1, (arma::blas_len)1);
-  return M;
-}
-
-// sum(x * y); long double accumulator matches R's sum() (see mean_twopass below)
-inline double seqsum_prod(const arma::vec &x, const arma::vec &y) {
-  long double s = 0.0L;
-  for (arma::uword k = 0; k < x.n_elem; ++k) {
-    double term = x[k] * y[k];
-    s += term;
-  }
-  return (double) s;
-}
-
-// crossprod(X) == t(X) %*% X
-inline arma::mat crossprod(const arma::mat &X) {
-  arma::blas_int n = X.n_cols, k = X.n_rows, lda = X.n_rows, ldc = X.n_cols;
-  arma::mat C(n, n, arma::fill::zeros);
-  if (n == 0 || k == 0) return C;
-  char uplo = 'U', trans = 'T';
-  double alpha = 1.0, beta = 0.0;
-  arma::dsyrk_(&uplo, &trans, &n, &k, &alpha, const_cast<double*>(X.memptr()), &lda,
-               &beta, C.memptr(), &ldc, (arma::blas_len)1, (arma::blas_len)1);
-  for (int a = 0; a < n; ++a)
-    for (int b = 0; b < a; ++b)
-      C(a, b) = C(b, a); // dsyrk only fills the upper triangle
-  return C;
-}
-
-// tcrossprod(A, B) == A %*% t(B)
-inline arma::mat tcrossprod(const arma::mat &A, const arma::mat &B) {
-  arma::blas_int m = A.n_rows, n = B.n_rows, k = A.n_cols;
-  arma::blas_int lda = A.n_rows, ldb = B.n_rows, ldc = A.n_rows;
-  arma::mat C(m, n, arma::fill::zeros);
-  if (m == 0 || n == 0 || k == 0) return C;
-  char transa = 'N', transb = 'T';
-  double alpha = 1.0, beta = 0.0;
-  arma::dgemm_(&transa, &transb, &m, &n, &k, &alpha, const_cast<double*>(A.memptr()), &lda,
-               const_cast<double*>(B.memptr()), &ldb, &beta, C.memptr(), &ldc,
-               (arma::blas_len)1, (arma::blas_len)1);
-  return C;
-}
-
-// chol2inv(R): inverse of A = R'R from upper-triangular chol factor R
-inline arma::mat chol2inv(const arma::mat &R_chol) {
-  arma::mat A = R_chol; // dpotri overwrites in place
-  int n = A.n_rows;
-  if (n == 0) return A;
-  char uplo = 'U';
-  arma::blas_int bn = n, lda = n, info = 0;
-  arma::lapack::potri(&uplo, &bn, A.memptr(), &lda, &info);
-  if (info != 0) stop("LAPACK failed to invert a Cholesky factor (info=%d).", info);
-  for (int a = 0; a < n; ++a)
-    for (int b = 0; b < a; ++b)
-      A(a, b) = A(b, a); // dpotri only fills the upper triangle
-  return A;
-}
-
-// solve(A): general square-matrix inverse, via dgesv (LU + solve against
-// identity) -- NOT dgetrf+dgetri, which diverges from R's solve()
-inline arma::mat solve_general(const arma::mat &A_in) {
-  arma::mat A = A_in; // dgesv overwrites A with its LU factors
-  int n = A.n_rows;
-  arma::mat B(n, n, arma::fill::eye);
-  if (n == 0) return B;
-  arma::blas_int bn = n, nrhs = n, lda = n, ldb = n, info = 0;
-  std::vector<arma::blas_int> ipiv(n);
-  arma::lapack::gesv(&bn, &nrhs, A.memptr(), &lda, ipiv.data(), B.memptr(), &ldb, &info);
-  if (info != 0) stop("LAPACK failed to solve a linear system (info=%d).", info);
-  return B;
-}
-
-} // namespace badgers_blas
-
-// R-statistics-function ports needed for setup and post-processing.
-namespace badgers_stats {
-
-// mean(x): R's two-pass compensated algorithm (sum, then a correction pass
-// over the residuals), not sum/n. Long double accumulators match R's
-// real_mean() (src/main/summary.c). mean(numeric(0)) is NaN, which 0.0/0
-// naturally produces here.
-inline double mean_twopass(const std::vector<double> &vals) {
-  int m = (int) vals.size();
-  long double s = 0.0L;
-  for (double v : vals) s += v;
-  s /= m;
-  if (R_FINITE((double) s)) {
-    long double t = 0.0L;
-    for (double v : vals) t += (v - s);
-    s += t / m;
-  }
-  return (double) s;
-}
-
-// rowMeans(M): plain sum/n per row, no two-pass correction (unlike mean()),
-// but still a long double accumulator (R's do_colsum in array.c).
-inline double rowmean_naive(const arma::mat &M, int row) {
-  long double s = 0.0L;
-  for (arma::uword c = 0; c < M.n_cols; ++c) s += M(row, c);
-  return (double) (s / M.n_cols);
-}
-
-// quantile(x, probs), R's default type=7, ported from stats:::quantile.default:
-// index=(n-1)*p+1 (1-based), lo=floor(index), hi=ceiling(index) (not lo+1),
-// qs=x[lo], and only when index>lo and x[hi]!=qs: qs=(1-h)*qs+h*x[hi].
-inline double quantile7(std::vector<double> x, double p) {
-  std::sort(x.begin(), x.end());
-  int n = (int) x.size();
-  double index = (n - 1) * p + 1.0;
-  double lo = std::floor(index);
-  double hi = std::ceil(index);
-  int lo_i = (int) lo - 1, hi_i = (int) hi - 1;
-  double qs = x[lo_i];
-  if (index > lo && x[hi_i] != qs) {
-    double h = index - lo;
-    qs = (1.0 - h) * qs + h * x[hi_i];
-  }
-  return qs;
-}
+namespace badgers_graph {
 
 // All-pairs shortest-path distances for an unweighted undirected graph
 // (replaces igraph::distances(), avoiding that dependency).
@@ -232,13 +75,16 @@ inline arma::mat bfs_distances(const arma::Mat<int> &adj) {
   return dist;
 }
 
-} // namespace badgers_stats
+} // namespace badgers_graph
 
-// V2 block Gibbs update for Gamma with edge-specific and diagonal penalties.
-//
-// `tau1` is dropped from the signature: in R it is scratch space passed in
-// as a fresh zeros(p,p) and fully overwritten before use, so its input value
-// never affects the output; allocated as zeros internally instead.
+// Solve a Gaussian conditional mean using its existing precision factor.
+inline arma::vec solve_precision(const arma::mat &upper, const arma::vec &rhs) {
+  arma::vec intermediate = arma::solve(arma::trimatl(upper.t()), rhs,
+                                       arma::solve_opts::no_approx);
+  return arma::solve(arma::trimatu(upper), intermediate, arma::solve_opts::no_approx);
+}
+
+// Adaptive graphical lasso update for latent-covariate precision Gamma.
 // [[Rcpp::export]]
 List AdaptiveGLasso_cpp(NumericMatrix S_, double n, int p,
                          NumericMatrix gamma_, NumericMatrix inv_gamma_,
@@ -318,6 +164,13 @@ List AdaptiveGLasso_cpp(NumericMatrix S_, double n, int p,
   // Update Gamma column by column.
   for (int jj = 1; jj <= p; ++jj) {
     int j0 = jj - 1;
+    if (p == 1) {
+      // There is no off-diagonal Gaussian block in the scalar conditional.
+      double rate = (S(0, 0) + iota_diag[0]) / 2.0;
+      gamma(0, 0) = R::rgamma(n / 2.0 + 1.0, 1.0 / rate);
+      inv_gamma(0, 0) = 1.0 / gamma(0, 0);
+      continue;
+    }
 
     arma::uvec ind_noi(p - 1);
     for (int k = 0; k < p - 1; ++k) ind_noi[k] = (arma::uword)(ind_noi_all(k, j0) - 1);
@@ -330,34 +183,24 @@ List AdaptiveGLasso_cpp(NumericMatrix S_, double n, int p,
     for (int k = 0; k < p - 1; ++k) ig_col[k] = inv_gamma(ind_noi[k], j0);
     double ig_jj = inv_gamma(j0, j0);
 
-    arma::mat outer_ig = badgers_blas::outer(ig_col);
-    arma::mat inv_gamma_11(p - 1, p - 1);
-    for (int a = 0; a < p - 1; ++a)
-      for (int b = 0; b < p - 1; ++b)
-        inv_gamma_11(a, b) = ig_sub(a, b) - outer_ig(a, b) / ig_jj;
+    arma::mat outer_ig = (ig_col * ig_col.t());
+    arma::mat inv_gamma_11 = ig_sub - outer_ig / ig_jj;
 
     double s_plus_iota = S(j0, j0) + iota_diag[j0];
-    arma::mat gamma_i(p - 1, p - 1);
-    for (int a = 0; a < p - 1; ++a)
-      for (int b = 0; b < p - 1; ++b)
-        gamma_i(a, b) = s_plus_iota * inv_gamma_11(a, b);
-    for (int k = 0; k < p - 1; ++k) gamma_i(k, k) += 1.0 / tau_col[k];
-
-    arma::mat gamma_i_sym(p - 1, p - 1);
-    for (int a = 0; a < p - 1; ++a)
-      for (int b = 0; b < p - 1; ++b)
-        gamma_i_sym(a, b) = (gamma_i(a, b) + gamma_i(b, a)) / 2.0;
+    arma::mat gamma_i = s_plus_iota * inv_gamma_11;
+    gamma_i.diag() += 1.0 / tau_col;
+    arma::mat gamma_i_sym = (gamma_i + gamma_i.t()) / 2.0;
 
     arma::mat R_chol = arma::chol(gamma_i_sym); // upper triangular
 
     arma::vec Scol(p - 1);
     for (int k = 0; k < p - 1; ++k) Scol[k] = S(ind_noi[k], j0);
-    arma::vec fw = arma::solve(arma::trimatl(R_chol.t()), Scol);
-    arma::vec mu_gamma_i = -arma::solve(arma::trimatu(R_chol), fw);
+    arma::vec fw = arma::solve(arma::trimatl(R_chol.t()), Scol, arma::solve_opts::no_approx);
+    arma::vec mu_gamma_i = -arma::solve(arma::trimatu(R_chol), fw, arma::solve_opts::no_approx);
 
     arma::vec z(p - 1);
     for (int k = 0; k < p - 1; ++k) z[k] = R::norm_rand();
-    arma::vec beta_i = mu_gamma_i + arma::solve(arma::trimatu(R_chol), z);
+    arma::vec beta_i = mu_gamma_i + arma::solve(arma::trimatu(R_chol), z, arma::solve_opts::no_approx);
 
     for (int k = 0; k < p - 1; ++k) {
       gamma(ind_noi[k], j0) = beta_i[k];
@@ -366,16 +209,12 @@ List AdaptiveGLasso_cpp(NumericMatrix S_, double n, int p,
 
     double gamma_indiv = R::rgamma(n / 2.0 + 1.0, 1.0 / (s_plus_iota / 2.0));
 
-    arma::vec inv_gamma_11_beta = badgers_blas::matvec(inv_gamma_11, beta_i);
-    double quad = badgers_blas::seqsum_prod(beta_i, inv_gamma_11_beta);
+    arma::vec inv_gamma_11_beta = (inv_gamma_11 * beta_i);
+    double quad = arma::dot(beta_i, inv_gamma_11_beta);
     gamma(j0, j0) = gamma_indiv + quad;
 
-    arma::mat outer_igb = badgers_blas::outer(inv_gamma_11_beta);
-    for (int a = 0; a < p - 1; ++a) {
-      for (int b = 0; b < p - 1; ++b) {
-        inv_gamma(ind_noi[a], ind_noi[b]) = inv_gamma_11(a, b) + outer_igb(a, b) / gamma_indiv;
-      }
-    }
+    arma::mat outer_igb = (inv_gamma_11_beta * inv_gamma_11_beta.t());
+    inv_gamma.submat(ind_noi, ind_noi) = inv_gamma_11 + outer_igb / gamma_indiv;
     for (int k = 0; k < p - 1; ++k) {
       double v = -inv_gamma_11_beta[k] / gamma_indiv;
       inv_gamma(ind_noi[k], j0) = v;
@@ -388,41 +227,17 @@ List AdaptiveGLasso_cpp(NumericMatrix S_, double n, int p,
                        _["iota_edge"] = iota_edge, _["iota_diag"] = iota_diag);
 }
 
-// rinvgamma() note: provided by both the invgamma and nimble packages with
-// different `scale` conventions; the driver script's library() load order
-// resolves it to nimble's (mean = scale/(shape-1)), ported here as
-// 1/R::rgamma(shape, 1/scale).
-
-// ---- sigma^2 update (Gibbs) ----
-// y_Xbeta = ytrain-(xtrain%*%beta)
-// sigma2_scale_post = b_sigma + (sum(y_Xbeta^2) + sum(beta^2/tau^2))/2
-// sigma2 = rinvgamma(1, shape = sigma2_shape_post, scale = sigma2_scale_post)
+// ---- sigma^2 update (inverse-Gamma conditional) ----
 // [[Rcpp::export]]
 double update_sigma2_cpp(NumericVector ytrain, NumericMatrix xtrain, NumericVector beta,
                           NumericVector tau, double b_sigma, double sigma2_shape_post) {
-  int ntrain = xtrain.nrow();
-  int p = xtrain.ncol();
-
   arma::mat X = as<arma::mat>(xtrain);
-  arma::vec b = as<arma::vec>(beta);
-  arma::vec Xbeta = badgers_blas::matvec(X, b);
-
-  long double sumsq_resid = 0.0L;
-  for (int i = 0; i < ntrain; ++i) {
-    double r = ytrain[i] - Xbeta[i];
-    sumsq_resid += r * r;
-  }
-
-  long double sumsq_beta_tau = 0.0L;
-  for (int k = 0; k < p; ++k) {
-    double term = (beta[k] * beta[k]) / (tau[k] * tau[k]);
-    sumsq_beta_tau += term;
-  }
-
-  // Each sum() is cast to double individually before adding, matching R's
-  // two separate sum() calls added at the interpreter level.
-  double sigma2_scale_post = b_sigma + ((double) sumsq_resid + (double) sumsq_beta_tau) / 2.0;
-  return 1.0 / R::rgamma(sigma2_shape_post, 1.0 / sigma2_scale_post);
+  arma::vec residual = as<arma::vec>(ytrain) - X * as<arma::vec>(beta);
+  arma::vec beta_square = arma::square(as<arma::vec>(beta));
+  arma::vec tau_square = arma::square(as<arma::vec>(tau));
+  double scale = b_sigma + (arma::accu(arma::square(residual)) +
+                            arma::accu(beta_square / tau_square)) / 2.0;
+  return 1.0 / R::rgamma(sigma2_shape_post, 1.0 / scale);
 }
 
 // ---- alpha update (p sequential MH steps) ----
@@ -480,49 +295,23 @@ List update_alpha_cpp(NumericVector alpha, NumericVector tau, NumericMatrix phi,
   return List::create(_["alpha"] = alpha_new, _["accepted"] = accepted);
 }
 
-// ---- beta update (Gibbs) ----
-// A_inv = crossprod(xtrain); diag(A_inv) += 1/tau^2
-// A_inv_chol = chol(A_inv/sigma2); A = chol2inv(A_inv_chol)
-// beta_mean_post = tcrossprod(A,xtrain)%*%ytrain/sigma2
-// beta = beta_mean_post + rmnorm_chol(1, 0, A_inv_chol, prec_param=TRUE)
-//
-// tcrossprod(A,xtrain)%*%ytrain/sigma2 is computed in exactly that order
-// (%*% binds tighter than / in R), not regrouped into A%*%(t(xtrain)%*%ytrain)
-// -- matrix multiplication is not bit-exact-associative.
-//
-// rmnorm_chol(1, 0, R, prec_param=TRUE) is backsolve(R, rnorm(p)) (per
-// nimble's C source), ported as arma::solve(trimatu(...)). Caveat: on macOS,
-// nimble.so links Apple's Accelerate framework as well as R's own BLAS, and
-// its rmnorm_chol resolves to Accelerate for the triangular solve -- about 1
-// ULP off from this port (which matches R's own backsolve()/BLAS) on that
-// platform. Confirmed a non-issue on the Linux deployment target, where
-// nimble uses the same BLAS as R.
+// ---- beta update (Gaussian conditional) ----
 // [[Rcpp::export]]
 NumericVector update_beta_cpp(NumericMatrix xtrain, NumericVector ytrain,
                                NumericVector tau, double sigma2) {
-  int p = xtrain.ncol();
   arma::mat X = as<arma::mat>(xtrain);
+  arma::vec y = as<arma::vec>(ytrain);
+  arma::vec scales = as<arma::vec>(tau);
+  arma::mat precision = X.t() * X;
+  precision.diag() += 1.0 / arma::square(scales);
+  arma::mat upper = arma::chol(precision / sigma2);
+  arma::vec mean = solve_precision(upper, X.t() * y / sigma2);
 
-  arma::mat A_inv = badgers_blas::crossprod(X);
-  for (int k = 0; k < p; ++k) A_inv(k, k) += 1.0 / (tau[k] * tau[k]);
-
-  arma::mat scaled = A_inv / sigma2;
-  arma::mat A_inv_chol = arma::chol(scaled);
-
-  arma::mat A = badgers_blas::chol2inv(A_inv_chol);
-
-  arma::mat T = badgers_blas::tcrossprod(A, X);
-  arma::vec yv = as<arma::vec>(ytrain);
-  arma::vec beta_mean_post = badgers_blas::matvec(T, yv);
-  for (int k = 0; k < p; ++k) beta_mean_post[k] /= sigma2;
-
-  arma::vec z(p);
-  for (int k = 0; k < p; ++k) z[k] = R::norm_rand();
-  arma::vec draw = arma::solve(arma::trimatu(A_inv_chol), z);
-
-  NumericVector beta(p);
-  for (int k = 0; k < p; ++k) beta[k] = beta_mean_post[k] + draw[k];
-  return beta;
+  arma::vec z(X.n_cols);
+  for (arma::uword j = 0; j < z.n_elem; ++j) z[j] = R::norm_rand();
+  arma::vec draw = mean + arma::solve(arma::trimatu(upper), z,
+                                     arma::solve_opts::no_approx);
+  return NumericVector(draw.begin(), draw.end());
 }
 
 // ---- tau update (p independent Gibbs draws) ----
@@ -567,17 +356,8 @@ NumericVector update_tau_cpp(NumericVector beta, NumericVector alpha, double sig
   return tau;
 }
 
-// ---- Phi update (Gibbs, per-column with 0/1/>1-neighbor branches) ----
-// B is A_Phi = eta*(11^T + epsilon*I) + (alpha-mu)(alpha-mu)^T/nu
-//
-// diag(epsilon,p) is a p x p matrix with epsilon on the diagonal and 0
-// elsewhere (R's diag(x, nrow) form, not the diag(x)-is-identity-of-size-x
-// case), so eta*(diag(epsilon,p)+1) has eta*(epsilon+1) on the diagonal and
-// eta off it.
-//
-// The non_zero_phi draw in the >1-neighbor branch uses R's own
-// backsolve()/forwardsolve() directly (not rmnorm_chol), so this block has
-// no Accelerate-related caveat.
+// ---- Phi update, restricted to the working graph ----
+// Conditional rate: eta * (11^T + epsilon * I) + (alpha-mu)(alpha-mu)^T / nu.
 // [[Rcpp::export]]
 List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_,
                      NumericVector alpha, double mu,
@@ -586,17 +366,10 @@ List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_,
   arma::mat phi = as<arma::mat>(phi_);
   arma::mat inv_phi = as<arma::mat>(inv_phi_);
 
-  arma::vec alpha_mu(p);
-  for (int k = 0; k < p; ++k) alpha_mu[k] = alpha[k] - mu;
-
-  arma::mat outer_am = badgers_blas::outer(alpha_mu);
-  arma::mat B(p, p);
-  for (int a = 0; a < p; ++a) {
-    for (int b = 0; b < p; ++b) {
-      double base = (a == b) ? eta * (epsilon + 1.0) : eta;
-      B(a, b) = base + outer_am(a, b) / nu;
-    }
-  }
+  arma::vec alpha_mu = as<arma::vec>(alpha) - mu;
+  arma::mat B(p, p, arma::fill::value(eta));
+  B.diag().fill(eta * (epsilon + 1.0));
+  B += alpha_mu * alpha_mu.t() / nu;
 
   double gamma_shape = 1.0 + (eta * (1.0 + epsilon) + 1.0) / 2.0;
   int m_full = p - 1;
@@ -613,11 +386,8 @@ List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_,
     for (int k = 0; k < m_full; ++k) inv_phi_12[k] = inv_phi(not_j[k], j0);
     arma::mat inv_phi_11_sub = inv_phi.submat(not_j, not_j);
 
-    arma::mat outer_ip12 = badgers_blas::outer(inv_phi_12);
-    arma::mat P_11(m_full, m_full);
-    for (int a = 0; a < m_full; ++a)
-      for (int b = 0; b < m_full; ++b)
-        P_11(a, b) = inv_phi_11_sub(a, b) - outer_ip12(a, b) / inv_phi_22;
+    arma::mat outer_ip12 = (inv_phi_12 * inv_phi_12.t());
+    arma::mat P_11 = inv_phi_11_sub - outer_ip12 / inv_phi_22;
 
     std::vector<arma::uword> nz_ind;
     for (int k = 0; k < p; ++k)
@@ -634,11 +404,8 @@ List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_,
         arma::mat ip_nz_nz = inv_phi.submat(nzu, nzu);
         arma::vec ip_nz_j(m);
         for (int k = 0; k < m; ++k) ip_nz_j[k] = inv_phi(nzu[k], j0);
-        arma::mat outer_ipnzj = badgers_blas::outer(ip_nz_j);
-        arma::mat prec_nz(m, m);
-        for (int a = 0; a < m; ++a)
-          for (int b = 0; b < m; ++b)
-            prec_nz(a, b) = ip_nz_nz(a, b) - outer_ipnzj(a, b) / inv_phi_22;
+        arma::mat outer_ipnzj = (ip_nz_j * ip_nz_j.t());
+        arma::mat prec_nz = ip_nz_nz - outer_ipnzj / inv_phi_22;
 
         arma::mat prec_nz_sqrt = arma::chol(prec_nz); // upper triangular
 
@@ -650,16 +417,15 @@ List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_,
         arma::vec pt_mean_o1(m);
         for (int k = 0; k < m; ++k) pt_mean_o1[k] = neg_inv_Bjj * B(nzu[k], j0);
 
-        arma::vec pt_mean_o2 = arma::solve(arma::trimatl(prec_nz_sqrt.t()), pt_mean_o1);
-        arma::vec mean_nz = arma::solve(arma::trimatu(prec_nz_sqrt), pt_mean_o2);
-        arma::vec bs_mid = arma::solve(arma::trimatu(prec_nz_sqrt), mid);
+        arma::vec pt_mean_o2 = arma::solve(arma::trimatl(prec_nz_sqrt.t()), pt_mean_o1, arma::solve_opts::no_approx);
+        arma::vec mean_nz = arma::solve(arma::trimatu(prec_nz_sqrt), pt_mean_o2, arma::solve_opts::no_approx);
+        arma::vec bs_mid = arma::solve(arma::trimatu(prec_nz_sqrt), mid, arma::solve_opts::no_approx);
         for (int k = 0; k < m; ++k) non_zero_phi[k] = bs_mid[k] + mean_nz[k];
 
         xi = R::rgamma(gamma_shape, 1.0 / (B_jj / 2.0));
 
-        arma::vec partial = badgers_blas::matvec(prec_nz_sqrt, non_zero_phi);
-        arma::blas_int bm = m, binc = 1;
-        double cp = arma::ddot_(&bm, partial.memptr(), &binc, partial.memptr(), &binc);
+        arma::vec partial = (prec_nz_sqrt * non_zero_phi);
+        double cp = arma::dot(partial, partial);
         diag_phi = xi + cp;
 
       } else { // m == 1
@@ -693,16 +459,12 @@ List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_,
     arma::vec phi_col(m_full);
     for (int k = 0; k < m_full; ++k) phi_col[k] = phi(not_j[k], j0);
 
-    arma::vec pp = badgers_blas::matvec(P_11, phi_col);
-    arma::mat outer_pp = badgers_blas::outer(pp);
-    arma::mat inv_phi_11(m_full, m_full);
-    for (int a = 0; a < m_full; ++a)
-      for (int b = 0; b < m_full; ++b)
-        inv_phi_11(a, b) = P_11(a, b) + inv_phi(j0, j0) * outer_pp(a, b);
+    arma::vec pp = (P_11 * phi_col);
+    arma::mat outer_pp = (pp * pp.t());
+    arma::mat inv_phi_11 = P_11 + inv_phi(j0, j0) * outer_pp;
 
-    arma::vec ip11_phicol = badgers_blas::matvec(inv_phi_11, phi_col);
-    arma::vec inv_phi_12_new(m_full);
-    for (int k = 0; k < m_full; ++k) inv_phi_12_new[k] = -ip11_phicol[k] / phi(j0, j0);
+    arma::vec ip11_phicol = (inv_phi_11 * phi_col);
+    arma::vec inv_phi_12_new = -ip11_phicol / phi(j0, j0);
 
     for (int a = 0; a < m_full; ++a)
       for (int b = 0; b < m_full; ++b)
@@ -725,131 +487,55 @@ namespace badgers_core {
 
 struct XUpdateResult { NumericMatrix xtrain, xtune, xtest; };
 
-// ---- X update (train/tune/test latent variables, Gibbs) ----
-// A_x_inv = gamma + tcrossprod(beta)/sigma2; diag(A_x_inv) += r_i/rho2
-// A_x_inv_tune = gamma; diag(A_x_inv_tune) += r_i/rho2 (no beta term)
-// x_i = A_x %*% vec + rmnorm_chol(1, 0, A_x_inv_chol, prec_param=TRUE), same
-// for tune/test using A_x_tune/A_x_inv_chol_tune (see update_beta_cpp for
-// the rmnorm_chol/Accelerate caveat, which applies here too).
+// ---- X update (Gaussian conditionals for training and held-out data) ----
 inline XUpdateResult update_X_core(const arma::cube &Wtrain, const arma::cube &Wtune,
                                     const arma::cube &Wtest, NumericVector ytrain,
                                     NumericVector beta, NumericVector r_i,
                                     const arma::mat &gamma, double sigma2, double rho2) {
-  int p = gamma.n_rows;
-  int ntrain = (int) Wtrain.n_cols, ntune = (int) Wtune.n_cols, ntest = (int) Wtest.n_cols;
+  arma::vec b = as<arma::vec>(beta);
+  arma::vec counts = as<arma::vec>(r_i);
+  arma::mat train_precision = gamma + b * b.t() / sigma2;
+  train_precision.diag() += counts / rho2;
+  arma::mat heldout_precision = gamma;
+  heldout_precision.diag() += counts / rho2;
+  arma::mat train_upper = arma::chol(train_precision);
+  arma::mat heldout_upper = arma::chol(heldout_precision);
 
-  arma::vec beta_v = as<arma::vec>(beta);
-  arma::mat outer_beta = badgers_blas::outer(beta_v);
-  arma::mat A_x_inv(p, p);
-  for (int a = 0; a < p; ++a)
-    for (int b = 0; b < p; ++b)
-      A_x_inv(a, b) = gamma(a, b) + outer_beta(a, b) / sigma2;
-  for (int k = 0; k < p; ++k) A_x_inv(k, k) += r_i[k] / rho2;
-
-  arma::mat A_x_inv_chol = arma::chol(A_x_inv);
-  arma::mat A_x = badgers_blas::chol2inv(A_x_inv_chol);
-
-  arma::mat A_x_inv_tune = gamma;
-  for (int k = 0; k < p; ++k) A_x_inv_tune(k, k) += r_i[k] / rho2;
-
-  arma::mat A_x_inv_chol_tune = arma::chol(A_x_inv_tune);
-  arma::mat A_x_tune = badgers_blas::chol2inv(A_x_inv_chol_tune);
-
-  NumericMatrix xtrain(ntrain, p), xtune(ntune, p), xtest(ntest, p);
-
-  for (int ii = 0; ii < ntrain; ++ii) {
-    arma::vec w_i_sum(p);
-    for (int g = 0; g < p; ++g) {
-      long double s = 0.0L; // sum(na.omit(x)): long double accumulator
-      for (arma::uword r = 0; r < Wtrain.n_rows; ++r) {
-        double v = Wtrain(r, ii, g);
-        if (!std::isnan(v)) s += v;
+  auto sample_rows = [&](const arma::cube &W, const arma::mat &upper,
+                         bool training) -> NumericMatrix {
+    arma::mat X(W.n_cols, W.n_slices);
+    for (arma::uword i = 0; i < W.n_cols; ++i) {
+      arma::vec rhs(W.n_slices);
+      for (arma::uword j = 0; j < W.n_slices; ++j) {
+        rhs[j] = arma::accu(W.slice(j).col(i).head((arma::uword) counts[j])) / rho2;
       }
-      w_i_sum[g] = (double) s;
+      if (training) rhs += b * ytrain[i] / sigma2;
+      arma::vec mean = solve_precision(upper, rhs);
+      arma::vec z(W.n_slices);
+      for (arma::uword j = 0; j < z.n_elem; ++j) z[j] = R::norm_rand();
+      X.row(i) = (mean + arma::solve(arma::trimatu(upper), z,
+                                    arma::solve_opts::no_approx)).t();
     }
+    return wrap(X);
+  };
 
-    arma::vec vec_(p);
-    for (int g = 0; g < p; ++g)
-      vec_[g] = beta[g] * ytrain[ii] / sigma2 + w_i_sum[g] / rho2;
-
-    arma::vec mean_part = badgers_blas::matvec(A_x, vec_);
-
-    arma::vec z(p);
-    for (int k = 0; k < p; ++k) z[k] = R::norm_rand();
-    arma::vec draw = arma::solve(arma::trimatu(A_x_inv_chol), z);
-
-    for (int g = 0; g < p; ++g) xtrain(ii, g) = mean_part[g] + draw[g];
-  }
-
-  for (int ii = 0; ii < ntune; ++ii) {
-    arma::vec w_i_sum(p);
-    for (int g = 0; g < p; ++g) {
-      long double s = 0.0L;
-      for (arma::uword r = 0; r < Wtune.n_rows; ++r) {
-        double v = Wtune(r, ii, g);
-        if (!std::isnan(v)) s += v;
-      }
-      w_i_sum[g] = (double) s;
-    }
-    arma::vec vec_(p);
-    for (int g = 0; g < p; ++g) vec_[g] = w_i_sum[g] / rho2;
-
-    arma::vec mean_part = badgers_blas::matvec(A_x_tune, vec_);
-    arma::vec z(p);
-    for (int k = 0; k < p; ++k) z[k] = R::norm_rand();
-    arma::vec draw = arma::solve(arma::trimatu(A_x_inv_chol_tune), z);
-
-    for (int g = 0; g < p; ++g) xtune(ii, g) = mean_part[g] + draw[g];
-  }
-
-  for (int ii = 0; ii < ntest; ++ii) {
-    arma::vec w_i_sum(p);
-    for (int g = 0; g < p; ++g) {
-      long double s = 0.0L;
-      for (arma::uword r = 0; r < Wtest.n_rows; ++r) {
-        double v = Wtest(r, ii, g);
-        if (!std::isnan(v)) s += v;
-      }
-      w_i_sum[g] = (double) s;
-    }
-    arma::vec vec_(p);
-    for (int g = 0; g < p; ++g) vec_[g] = w_i_sum[g] / rho2;
-
-    arma::vec mean_part = badgers_blas::matvec(A_x_tune, vec_);
-    arma::vec z(p);
-    for (int k = 0; k < p; ++k) z[k] = R::norm_rand();
-    arma::vec draw = arma::solve(arma::trimatu(A_x_inv_chol_tune), z);
-
-    for (int g = 0; g < p; ++g) xtest(ii, g) = mean_part[g] + draw[g];
-  }
-
+  NumericMatrix xtrain = sample_rows(Wtrain, train_upper, true);
+  NumericMatrix xtune = sample_rows(Wtune, heldout_upper, false);
+  NumericMatrix xtest = sample_rows(Wtest, heldout_upper, false);
   return XUpdateResult{xtrain, xtune, xtest};
 }
 
-// ---- rho^2 update (Gibbs) ----
-// rho2_scale_post = b_rho + sum over j, r=1:r_i[j] of sum((Wtrain[r,,j]-xtrain[,j])^2)/2
-// The outer accumulation is R's own interpreted for-loop (plain double); the
-// inner sum(...) is a genuine R sum() call (long double accumulator).
-// r_i[j] is trusted as-is: Wtrain[1:r_i[j], , j] is assumed NA-free.
+// ---- rho^2 update (inverse-Gamma conditional) ----
 inline double update_rho2_core(const arma::cube &Wtrain, const arma::mat &xtrain,
                                 NumericVector r_i, double b_rho, double rho2_shape_post) {
-  int ntrain = (int) Wtrain.n_cols;
-  int p = (int) Wtrain.n_slices;
-
-  double rho2_scale_post = b_rho;
-  for (int j = 0; j < p; ++j) {
-    int rij = (int) r_i[j];
-    for (int r = 0; r < rij; ++r) {
-      long double s = 0.0L;
-      for (int i = 0; i < ntrain; ++i) {
-        double diff = Wtrain(r, i, j) - xtrain(i, j);
-        s += diff * diff;
-      }
-      rho2_scale_post += (double) s / 2.0;
+  double scale = b_rho;
+  for (arma::uword j = 0; j < Wtrain.n_slices; ++j) {
+    for (int r = 0; r < r_i[j]; ++r) {
+      arma::vec residual = Wtrain.slice(j).row(r).t() - xtrain.col(j);
+      scale += arma::dot(residual, residual) / 2.0;
     }
   }
-
-  return 1.0 / R::rgamma(rho2_shape_post, 1.0 / rho2_scale_post);
+  return 1.0 / R::rgamma(rho2_shape_post, 1.0 / scale);
 }
 
 } // namespace badgers_core
@@ -885,75 +571,30 @@ List update_gamma_cpp(NumericMatrix xtrain, double n, int p,
                        IntegerVector upperind, IntegerVector lowerind,
                        IntegerMatrix ind_noi_all) {
   arma::mat X = as<arma::mat>(xtrain);
-  arma::mat S = badgers_blas::crossprod(X);
+  arma::mat S = (X.t() * X);
   return AdaptiveGLasso_cpp(wrap(S), n, p, gamma_, inv_gamma_, a_iota, b_iota_edge,
                                b_iota_diag, upperind, lowerind, ind_noi_all);
 }
 
-// ---- adapt MH proposal SD (runs only when i %% k == 0) ----
-// s = i %/% k; gamma1 = 1/(s+3)^c1; gamma2 = 10*gamma1
-// r_alpha[,s] = apply(acs_alpha[,(s*k-k+1):(s*k)], 1, mean)
-// adaptFactor = exp(gamma2*(r_alpha[,s]-r_opt)); alpha_sd_prop *= adaptFactor
-//
-// R's mean() is the two-pass algorithm (long double), not sum/n. pow(x,0.8)
-// is a genuine fractional exponent (unlike the `^2` cases elsewhere, which
-// lower to x*x) -- std::pow() matches R's `^` here since both fall through
-// to the platform libm pow().
+// ---- adapt MH proposal SD at the end of an acceptance block ----
 // [[Rcpp::export]]
 List adapt_alpha_sd_cpp(NumericMatrix acs_alpha, int i, int k, double c1, double r_opt,
                          NumericVector alpha_sd_prop) {
-  int p = acs_alpha.nrow();
-  int s = i / k; // matches R's i %/% k
-
-  double gamma1 = 1.0 / std::pow((double)(s + 3), c1);
-  double gamma2 = 10.0 * gamma1;
-
-  int col_lo = s * k - k; // 0-based first column of the block (R: s*k-k+1, 1-based)
-  int col_hi = s * k - 1; // 0-based last column of the block  (R: s*k, 1-based)
-  int kk = col_hi - col_lo + 1;
-
-  NumericVector r_alpha_col(p);
-  NumericVector new_sd(p);
-  for (int j = 0; j < p; ++j) {
-    long double sum1 = 0.0L;
-    for (int c = col_lo; c <= col_hi; ++c) sum1 += acs_alpha(j, c);
-    long double mean_val = sum1 / kk;
-    if (R_FINITE((double) mean_val)) {
-      long double t = 0.0L;
-      for (int c = col_lo; c <= col_hi; ++c) t += (acs_alpha(j, c) - mean_val);
-      mean_val += t / kk;
-    }
-    // r_alpha[,s] is stored as plain double in R before adaptFactor reads it
-    // back, so round down to double here too rather than keep using the
-    // wider mean_val.
-    double mean_val_d = (double) mean_val;
-    r_alpha_col[j] = mean_val_d;
-
-    double adaptFactor = std::exp(gamma2 * (mean_val_d - r_opt));
-    new_sd[j] = alpha_sd_prop[j] * adaptFactor;
-  }
-
-  return List::create(_["alpha_sd_prop"] = new_sd, _["r_alpha_col"] = r_alpha_col);
+  arma::mat accepted(acs_alpha.begin(), acs_alpha.nrow(), acs_alpha.ncol(), false, true);
+  arma::vec rates = arma::mean(accepted.cols(i - k, i - 1), 1);
+  double step = 10.0 * (1.0 / std::pow((double) (i / k + 3), c1));
+  arma::vec sd = as<arma::vec>(alpha_sd_prop) % arma::exp(step * (rates - r_opt));
+  return List::create(_["alpha_sd_prop"] = NumericVector(sd.begin(), sd.end()),
+                       _["r_alpha_col"] = NumericVector(rates.begin(), rates.end()));
 }
 
-// badgers_mcmc_cpp(): full driver, assembling every block above into one loop
-// matching utility_v2.R's MCMC_v2() setup, n_iter loop, and post-processing
-// (both lite modes).
-// Setup/post-processing pieces specific to this function:
-//   - upperind/lowerind/ind_noi_all: pure integer arithmetic replicating
-//     Reshape()/pracma::triu()'s column-major traversal.
-//   - bfs_distances() replaces igraph::distances().
-//   - gamma <- solve(inv_gamma) uses badgers_blas::solve_general (dgesv).
-//   - rowMeans() (ytune_hat/ytest_hat) is plain sum/n, unlike mean().
-// Wtrain/Wtune/Wtest are converted to arma::cube once here, not per
-// iteration. R's `print(i)` in the adapt-SD block is kept as a progress line
-// every k iterations; output only, no effect on results.
+// Fixed-hyperparameter sampler. Posterior summaries are computed in R.
+// Replicate arrays are converted once, outside the MCMC loop.
 // [[Rcpp::export]]
 List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
-                  NumericVector ytune, NumericVector Wtune_,
-                  NumericVector ytest, NumericVector Wtest_,
+                  NumericVector Wtune_, NumericVector Wtest_,
                   NumericMatrix adj_graph,
-                  int n_iter, int burnin, int k,
+                  int n_iter, int k,
                   double a_sigma, double b_sigma,
                   double a_iota, double b_iota,
                   double a_rho, double b_rho,
@@ -1014,7 +655,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
           double v = W(r, i, g);
           if (!std::isnan(v)) vals.push_back(v);
         }
-        X(i, g) = badgers_stats::mean_twopass(vals);
+        X(i, g) = arma::mean(arma::vec(vals));
       }
     }
     return X;
@@ -1040,15 +681,15 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
     }
     phi_chol = arma::chol(phi_a);
   }
-  arma::mat inv_phi_a = badgers_blas::chol2inv(phi_chol);
+  arma::mat inv_phi_a = arma::inv_sympd(phi_a);
   NumericMatrix phi = wrap(phi_a);
   NumericMatrix inv_phi = wrap(inv_phi_a);
 
   arma::mat xtrain_a0 = as<arma::mat>(xtrain);
-  arma::mat S0 = badgers_blas::crossprod(xtrain_a0);
+  arma::mat S0 = (xtrain_a0.t() * xtrain_a0);
   arma::mat inv_gamma_a = S0 / (double) ntrain;
   for (int i = 0; i < p; ++i) inv_gamma_a(i, i) += 0.5;
-  arma::mat gamma_a = badgers_blas::solve_general(inv_gamma_a);
+  arma::mat gamma_a = arma::inv_sympd(inv_gamma_a);
   NumericMatrix gamma = wrap(gamma_a);
   NumericMatrix inv_gamma = wrap(inv_gamma_a);
 
@@ -1091,7 +732,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
   for (int a = 0; a < p; ++a)
     for (int b = 0; b < p; ++b)
       adj_int(a, b) = (adj_gamma_d(a, b) != 0.0) ? 1 : 0;
-  arma::mat dist_graph = badgers_stats::bfs_distances(adj_int);
+  arma::mat dist_graph = badgers_graph::bfs_distances(adj_int);
 
   double disconnected_rate = 1e-6;
   double graph_rate_scale = std::pow(10.0, -6.0 + c_graph);
@@ -1109,9 +750,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
   for (int t2 = 0; t2 < upperind.size(); ++t2) b_iota_edge[t2] = b_iota_graph.memptr()[upperind[t2] - 1];
 
   double sigma2_shape_post = a_sigma + (ntrain + p) / 2.0;
-  long double sum_r_i_ld = 0.0L;
-  for (int g = 0; g < p; ++g) sum_r_i_ld += r_i[g];
-  double sum_r_i = (double) sum_r_i_ld;
+  double sum_r_i = sum(r_i);
   double rho2_shape_post = a_rho + ntrain * sum_r_i / 2.0;
 
   // =========================== MCMC ===========================
@@ -1203,71 +842,21 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
       arma::mat xtune_a = as<arma::mat>(xtune);
       arma::mat xtest_a = as<arma::mat>(xtest);
       arma::vec beta_a = as<arma::vec>(beta);
-      arma::vec ytune_pred = badgers_blas::matvec(xtune_a, beta_a);
-      arma::vec ytest_pred = badgers_blas::matvec(xtest_a, beta_a);
+      arma::vec ytune_pred = (xtune_a * beta_a);
+      arma::vec ytest_pred = (xtest_a * beta_a);
       for (int ii = 0; ii < ntune; ++ii) Ytune_hat(ii, i0) = ytune_pred[ii];
       for (int ii = 0; ii < ntest; ++ii) Ytest_hat(ii, i0) = ytest_pred[ii];
     }
   }
 
-  // ===== calculate error rate and pick gene =====
-  int n_keep = n_iter - burnin;
-
-  arma::mat Ytune_hat_a = as<arma::mat>(Ytune_hat);
-  arma::mat Ytest_hat_a = as<arma::mat>(Ytest_hat);
-  NumericVector ytune_hat(ntune), ytest_hat(ntest);
-  for (int ii = 0; ii < ntune; ++ii) {
-    long double s = 0.0L;
-    for (int c = burnin; c < n_iter; ++c) s += Ytune_hat_a(ii, c);
-    ytune_hat[ii] = (double) (s / n_keep);
-  }
-  for (int ii = 0; ii < ntest; ++ii) {
-    long double s = 0.0L;
-    for (int c = burnin; c < n_iter; ++c) s += Ytest_hat_a(ii, c);
-    ytest_hat[ii] = (double) (s / n_keep);
-  }
-
-  std::vector<double> sq_tune(ntune), sq_test(ntest);
-  for (int ii = 0; ii < ntune; ++ii) { double d = ytune[ii] - ytune_hat[ii]; sq_tune[ii] = d * d; }
-  for (int ii = 0; ii < ntest; ++ii) { double d = ytest[ii] - ytest_hat[ii]; sq_test[ii] = d * d; }
-  double MSPE_tune = badgers_stats::mean_twopass(sq_tune);
-  double MSPE_test = badgers_stats::mean_twopass(sq_test);
-
-  arma::mat BETA_a = as<arma::mat>(BETA);
-  NumericVector beta_mean(p), Beta_95(p), Beta_90(p), Beta_80(p);
-  for (int j = 0; j < p; ++j) {
-    std::vector<double> row_vals(n_keep);
-    for (int c = 0; c < n_keep; ++c) row_vals[c] = BETA_a(j, burnin + c);
-    beta_mean[j] = badgers_stats::mean_twopass(row_vals);
-
-    double q025 = badgers_stats::quantile7(row_vals, 0.025);
-    double q975 = badgers_stats::quantile7(row_vals, 0.975);
-    Beta_95[j] = (q025 <= 0 && q975 >= 0) ? 0.0 : badgers_stats::mean_twopass(row_vals);
-
-    double q05 = badgers_stats::quantile7(row_vals, 0.05);
-    double q95 = badgers_stats::quantile7(row_vals, 0.95);
-    Beta_90[j] = (q05 <= 0 && q95 >= 0) ? 0.0 : badgers_stats::mean_twopass(row_vals);
-
-    double q10 = badgers_stats::quantile7(row_vals, 0.10);
-    double q90 = badgers_stats::quantile7(row_vals, 0.90);
-    Beta_80[j] = (q10 <= 0 && q90 >= 0) ? 0.0 : badgers_stats::mean_twopass(row_vals);
-  }
-
-  // ===== return results =====
   List result = List::create(
-    _["CI95"] = Beta_95,
-    _["CI90"] = Beta_90,
-    _["CI80"] = Beta_80,
-    _["MSPE_test"] = MSPE_test,
-    _["MSPE_tune"] = MSPE_tune,
     _["mu"] = mu,
     _["nu"] = nu,
     _["c_graph"] = c_graph,
     _["BETA"] = BETA,
     _["r_alpha"] = r_alpha,
     _["acs_alpha"] = acs_alpha,
-    _["alpha_sd_prop"] = alpha_sd_prop,
-    _["beta_mean"] = beta_mean
+    _["alpha_sd_prop"] = alpha_sd_prop
   );
   result["Xtrain"] = lite ? (SEXP) R_NilValue : (SEXP) wrap(Xtrain_arr);
   result["Xtune"]  = lite ? (SEXP) R_NilValue : (SEXP) wrap(Xtune_arr);
@@ -1279,5 +868,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
   result["TAU"]    = lite ? (SEXP) R_NilValue : (SEXP) wrap(TAU);
   result["GAMMA"]  = lite ? (SEXP) R_NilValue : (SEXP) wrap(GAMMA_arr);
 
+  result["Ytune_hat"] = Ytune_hat;
+  result["Ytest_hat"] = Ytest_hat;
   return result;
 }

@@ -80,3 +80,43 @@ test_that("Metropolis decisions remain valid when density ratios overflow", {
     expect_equal(actual$alpha, expected)
   }
 })
+
+test_that("latent Gaussian conditionals have the analytic moments", {
+  W <- array(c(1, 2, NA, -0.4, 0.3, 0.9), c(3, 1, 2))
+  counts <- c(2, 3)
+  beta <- c(1, 0.4)
+  gamma <- matrix(c(2, 0.4, 0.4, 1), 2)
+  rho2 <- 0.8
+  sigma2 <- 1.2
+  y <- 0.6
+  heldout_precision <- gamma + diag(counts / rho2)
+  train_precision <- heldout_precision + tcrossprod(beta) / sigma2
+  heldout_covariance <- solve(heldout_precision)
+  train_covariance <- solve(train_precision)
+  measurement_rhs <- colSums(W[, 1, ], na.rm = TRUE) / rho2
+  heldout_mean <- drop(heldout_covariance %*% measurement_rhs)
+  train_mean <- drop(train_covariance %*% (measurement_rhs + beta * y / sigma2))
+  N <- 2500L
+  set.seed(206)
+  draws <- replicate(N, {
+    draw <- badgers:::update_X_cpp(W, W, W, y, beta, counts, gamma, sigma2, rho2)
+    c(draw$xtrain[1, ], draw$xtune[1, ], draw$xtest[1, ])
+  })
+  # Independent Gaussian conditional draws: six analytic Monte Carlo SEs.
+  for (block in 0:2) {
+    V <- if (block == 0) train_covariance else heldout_covariance
+    m <- if (block == 0) train_mean else heldout_mean
+    sample <- draws[2 * block + 1:2, , drop = FALSE]
+    expect_true(all(abs(rowMeans(sample) - m) < 6 * sqrt(diag(V) / N)))
+    covariance_se <- sqrt((V^2 + outer(diag(V), diag(V))) / (N - 1))
+    expect_true(all(abs(cov(t(sample)) - V) < 6 * covariance_se))
+  }
+})
+
+test_that("compiled vector outputs have no matrix dimension attribute", {
+  draw <- badgers:::update_beta_cpp(matrix(c(1, 2), 2, 1), c(1, 0), 1, 1)
+  expect_null(dim(draw))
+  adapted <- badgers:::adapt_alpha_sd_cpp(matrix(c(0, 1), 1), 2L, 2L, 0.8, 0.44, 1)
+  expect_null(dim(adapted$alpha_sd_prop))
+  expect_null(dim(adapted$r_alpha_col))
+})
