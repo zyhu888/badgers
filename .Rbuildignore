@@ -1,7 +1,9 @@
-^badgers\\.Rproj$
-^\\.Rproj\\.user$
-^\\.git$
-^\\.github$
-^\\.gitignore$
-^README\\.Rmd$
-^LICENSE\\.md$
+^badgers\.Rproj$
+^\.Rproj\.user$
+^\.git$
+^\.github$
+^\.gitignore$
+^README\.Rmd$
+^LICENSE\.md$
+^AGENTS\.md$
+^README\.html$
