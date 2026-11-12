@@ -18,7 +18,9 @@ using namespace Rcpp;
 // array.c). On ARM64 (long double == double) this makes no difference, but
 // on x86_64 long double is genuine 80-bit precision and this is required
 // for bit-exactness.
+#ifdef __clang__
 #pragma clang fp contract(off)
+#endif
 
 // MH acceptance-ratio density for the alpha update.
 // [[Rcpp::export]]
@@ -70,6 +72,7 @@ inline arma::vec matvec(const arma::mat &A, const arma::vec &x) {
   char trans = 'N';
   arma::blas_int m = A.n_rows, n = A.n_cols, lda = A.n_rows, incx = 1, incy = 1;
   double alpha = 1.0, beta = 0.0;
+  if (m == 0 || n == 0) return y;
   arma::dgemv_(&trans, &m, &n, &alpha, const_cast<double*>(A.memptr()), &lda,
                const_cast<double*>(x.memptr()), &incx, &beta, y.memptr(), &incy,
                (arma::blas_len)1);
@@ -80,6 +83,7 @@ inline arma::vec matvec(const arma::mat &A, const arma::vec &x) {
 inline arma::mat outer(const arma::vec &x) {
   arma::blas_int n = x.n_elem, k = 1;
   arma::mat M(n, n, arma::fill::zeros);
+  if (n == 0) return M;
   char transa = 'N', transb = 'T';
   double alpha = 1.0, beta = 0.0;
   arma::dgemm_(&transa, &transb, &n, &n, &k, &alpha, const_cast<double*>(x.memptr()), &n,
@@ -102,6 +106,7 @@ inline double seqsum_prod(const arma::vec &x, const arma::vec &y) {
 inline arma::mat crossprod(const arma::mat &X) {
   arma::blas_int n = X.n_cols, k = X.n_rows, lda = X.n_rows, ldc = X.n_cols;
   arma::mat C(n, n, arma::fill::zeros);
+  if (n == 0 || k == 0) return C;
   char uplo = 'U', trans = 'T';
   double alpha = 1.0, beta = 0.0;
   arma::dsyrk_(&uplo, &trans, &n, &k, &alpha, const_cast<double*>(X.memptr()), &lda,
@@ -117,6 +122,7 @@ inline arma::mat tcrossprod(const arma::mat &A, const arma::mat &B) {
   arma::blas_int m = A.n_rows, n = B.n_rows, k = A.n_cols;
   arma::blas_int lda = A.n_rows, ldb = B.n_rows, ldc = A.n_rows;
   arma::mat C(m, n, arma::fill::zeros);
+  if (m == 0 || n == 0 || k == 0) return C;
   char transa = 'N', transb = 'T';
   double alpha = 1.0, beta = 0.0;
   arma::dgemm_(&transa, &transb, &m, &n, &k, &alpha, const_cast<double*>(A.memptr()), &lda,
@@ -129,9 +135,11 @@ inline arma::mat tcrossprod(const arma::mat &A, const arma::mat &B) {
 inline arma::mat chol2inv(const arma::mat &R_chol) {
   arma::mat A = R_chol; // dpotri overwrites in place
   int n = A.n_rows;
+  if (n == 0) return A;
   char uplo = 'U';
   arma::blas_int bn = n, lda = n, info = 0;
   arma::lapack::potri(&uplo, &bn, A.memptr(), &lda, &info);
+  if (info != 0) stop("LAPACK failed to invert a Cholesky factor (info=%d).", info);
   for (int a = 0; a < n; ++a)
     for (int b = 0; b < a; ++b)
       A(a, b) = A(b, a); // dpotri only fills the upper triangle
@@ -144,9 +152,11 @@ inline arma::mat solve_general(const arma::mat &A_in) {
   arma::mat A = A_in; // dgesv overwrites A with its LU factors
   int n = A.n_rows;
   arma::mat B(n, n, arma::fill::eye);
+  if (n == 0) return B;
   arma::blas_int bn = n, nrhs = n, lda = n, ldb = n, info = 0;
   std::vector<arma::blas_int> ipiv(n);
   arma::lapack::gesv(&bn, &nrhs, A.memptr(), &lda, ipiv.data(), B.memptr(), &ldb, &info);
+  if (info != 0) stop("LAPACK failed to solve a linear system (info=%d).", info);
   return B;
 }
 
@@ -282,7 +292,9 @@ List AdaptiveGLasso_cpp(NumericMatrix S_, double n, int p,
   }
   for (int i = 0; i < m_edge; ++i) {
     double Yphi = Y[i] * ig_phi[i] * mu_prime[i];
-    if (Yphi > 5e5) {
+    if (Yphi == 0.0) {
+      X1[i] = 1.0;
+    } else if (Yphi > 5e5) {
       X1[i] = 1.0 / Yphi;
     } else {
       X1[i] = 1.0 + Yphi / 2.0 * (1.0 - std::sqrt(1.0 + 4.0 / Yphi));
@@ -431,11 +443,35 @@ List update_alpha_cpp(NumericVector alpha, NumericVector tau, NumericMatrix phi,
     double alpha_j_prop = R::rnorm(alpha_j, alpha_sd_prop[j0]);
 
     double comp = p_density_mmh_cpp(alpha_j_prop, alpha_j, tau_j, alpha_new, phi, jj, nu, mu);
-    if (std::isnan(comp)) comp = 0.0;
-    double prob = std::min(comp, 1.0);
-
     double u = R::unif_rand();
-    if (u < prob) {
+    bool accept;
+    if (std::isfinite(comp) && comp > 0.0) {
+      accept = u < std::min(comp, 1.0);
+    } else {
+      long double delta = (long double) alpha_j_prop - alpha_j;
+      long double quad = 0.0L;
+      for (int h = 0; h < p; ++h) {
+        long double midpoint = (long double) alpha_new[h] - mu;
+        if (h == j0) midpoint += delta / 2.0L;
+        quad += (long double) phi(j0, h) * midpoint;
+      }
+      // Combine log(tau) and alpha before exponentiating, including on
+      // platforms where long double has the same range as double.
+      long double log_tau = std::log((long double) tau_j);
+      long double base = 2.0L * ((long double) alpha_j + log_tau);
+      long double penalty;
+      if (delta == 0.0L) {
+        penalty = 0.0L;
+      } else if (std::fabs(delta) < 0.5L) {
+        penalty = std::exp(base) * std::expm1(2.0L * delta);
+      } else {
+        penalty = std::exp(2.0L * ((long double) alpha_j_prop + log_tau)) -
+          std::exp(base);
+      }
+      long double log_ratio = 2.0L * delta - penalty / 2.0L - delta * quad / nu;
+      accept = std::log((long double) u) < log_ratio;
+    }
+    if (accept) {
       alpha_new[j0] = alpha_j_prop;
       accepted[j0] = 1;
     }
@@ -507,7 +543,9 @@ NumericVector update_tau_cpp(NumericVector beta, NumericVector alpha, double sig
     double phi = 1.0 / shape_param;
     double Yphi = Y * phi * mean_param;
     double X1;
-    if (Yphi > 5e5) {
+    if (Yphi == 0.0) {
+      X1 = 1.0;
+    } else if (Yphi > 5e5) {
       X1 = 1.0 / Yphi;
     } else {
       X1 = 1.0 + Yphi / 2.0 * (1.0 - std::sqrt(1.0 + 4.0 / Yphi));
@@ -515,6 +553,12 @@ NumericVector update_tau_cpp(NumericVector beta, NumericVector alpha, double sig
     double u = R::unif_rand();
     bool firstroot = u < 1.0 / (1.0 + X1);
     double ri = firstroot ? X1 : 1.0 / X1;
+    if (beta[j] == 0.0) {
+      // At beta=0, tau^2 | beta has Gamma(1/2, rate=lambda^2/2).
+      // Use the already drawn normal; retain the uniform RNG consumption.
+      tau[j] = std::fabs(z) / lambda_j;
+      continue;
+    }
     double ig_draw = mean_param * ri;
 
     double tau2 = 1.0 / ig_draw;
@@ -985,7 +1029,18 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
   for (int a = 0; a < p; ++a)
     for (int b = 0; b < p; ++b)
       if (a != b && graph_a(a, b) != 0.0) phi_a(a, b) = 0.05; // fixed initial weight
-  arma::mat inv_phi_a = badgers_blas::chol2inv(arma::chol(phi_a));
+  arma::mat phi_chol;
+  if (!arma::chol(phi_chol, phi_a)) {
+    // Keep the graph's zero pattern, but use strict diagonal dominance when
+    // the historical 0.05 initialization is not positive definite.
+    for (int a = 0; a < p; ++a) {
+      double degree = 0.0;
+      for (int b = 0; b < p; ++b) if (a != b) degree += std::fabs(phi_a(a, b));
+      phi_a(a, a) = 1.0 + degree;
+    }
+    phi_chol = arma::chol(phi_a);
+  }
+  arma::mat inv_phi_a = badgers_blas::chol2inv(phi_chol);
   NumericMatrix phi = wrap(phi_a);
   NumericMatrix inv_phi = wrap(inv_phi_a);
 
@@ -1061,6 +1116,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
 
   // =========================== MCMC ===========================
   for (int i = 1; i <= n_iter; ++i) {
+    Rcpp::checkUserInterrupt();
     int i0 = i - 1;
 
     // ---- sigma^2 ----

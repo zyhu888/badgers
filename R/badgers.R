@@ -1,3 +1,54 @@
+## Shared scalar checks keep invalid controls out of compiled code.
+check_scalar <- function(x, name, lower = -Inf, upper = Inf,
+                         integer = FALSE, open_lower = FALSE,
+                         open_upper = FALSE) {
+  valid <- is.numeric(x) && !is.complex(x) && length(x) == 1L &&
+    is.null(dim(x)) && is.finite(x)
+  if (valid) {
+    valid <- x >= lower && x <= upper &&
+      (!open_lower || x > lower) && (!open_upper || x < upper) &&
+      (!integer || x == floor(x))
+  }
+  if (!valid) {
+    bounds <- sprintf("%s%s, %s%s", if (open_lower) "(" else "[",
+                      lower, upper, if (open_upper) ")" else "]")
+    stop(sprintf("%s must be a finite %sscalar in %s.", name,
+                 if (integer) "integer-valued " else "numeric ", bounds),
+         call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+check_flag <- function(x, name) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    stop(sprintf("%s must be TRUE or FALSE.", name), call. = FALSE)
+  }
+}
+
+check_mcmc_controls <- function(n_iter, burnin, k, a_sigma, b_sigma,
+                                a_iota, b_iota, a_rho, b_rho,
+                                eta, epsilon, c_graph, lite, verbose) {
+  check_scalar(n_iter, "n_iter", 1, .Machine$integer.max, integer = TRUE)
+  check_scalar(burnin, "burnin", 0, n_iter, integer = TRUE, open_upper = TRUE)
+  check_scalar(k, "k", 1, .Machine$integer.max, integer = TRUE)
+  positive <- list(a_sigma = a_sigma, b_sigma = b_sigma, a_iota = a_iota,
+                   b_iota = b_iota, a_rho = a_rho, b_rho = b_rho,
+                   eta = eta, epsilon = epsilon)
+  for (nm in names(positive)) check_scalar(positive[[nm]], nm, 0, open_lower = TRUE)
+  check_scalar(c_graph, "c_graph", 0, 6, open_lower = TRUE, open_upper = TRUE)
+  check_flag(lite, "lite")
+  check_flag(verbose, "verbose")
+}
+
+check_grid <- function(x, name, positive = FALSE) {
+  if (!is.numeric(x) || is.complex(x) || !is.null(dim(x)) ||
+      !length(x) || any(!is.finite(x)) || (positive && any(x <= 0))) {
+    stop(sprintf("%s must be a nonempty finite numeric vector%s.", name,
+                 if (positive) " with strictly positive values" else ""),
+         call. = FALSE)
+  }
+}
+
 ## Input checks shared by badgers_mcmc() and badgers().
 ##
 ## Wtrain, Wtune and Wtest are num_rep x n x p arrays. Predictors may have
@@ -14,13 +65,18 @@ check_badgers_inputs <- function(ytrain, Wtrain, ytune, Wtune, ytest, Wtest,
   for (nm in names(sets)) {
     W <- sets[[nm]]$W
     y <- sets[[nm]]$y
-    if (!is.numeric(W) || length(dim(W)) != 3L) {
+    if (!is.numeric(W) || is.complex(W) || length(dim(W)) != 3L ||
+        any(dim(W) < 1L)) {
       stop(sprintf("W%s must be a numeric num_rep x n x p array.", nm))
     }
-    if (length(y) != dim(W)[2]) {
+    if (!is.numeric(y) || is.complex(y) || !is.null(dim(y)) ||
+        length(y) != dim(W)[2]) {
       stop(sprintf("y%s must have length equal to dim(W%s)[2].", nm, nm))
     }
-    if (anyNA(y)) stop(sprintf("y%s must not contain missing values.", nm))
+    if (any(!is.finite(y))) stop(sprintf("y%s must contain only finite values.", nm))
+    if (any(is.infinite(W)) || any(is.nan(W))) {
+      stop(sprintf("W%s must contain finite values or trailing NA padding.", nm))
+    }
   }
 
   R <- dim(Wtrain)[1]
@@ -34,13 +90,18 @@ check_badgers_inputs <- function(ytrain, Wtrain, ytune, Wtune, ytest, Wtest,
     }
   }
 
-  if (!is.matrix(adj_graph) || any(dim(adj_graph) != p)) {
+  if (!is.matrix(adj_graph) || !(is.numeric(adj_graph) || is.logical(adj_graph)) ||
+      is.complex(adj_graph) || any(dim(adj_graph) != p)) {
     stop("adj_graph must be a p x p matrix, with p = dim(Wtrain)[3].")
   }
 
+  if (anyNA(adj_graph) || any(!adj_graph %in% c(0, 1)) ||
+      !all(adj_graph == t(adj_graph))) {
+    stop("adj_graph must be symmetric with finite 0/1 entries.", call. = FALSE)
+  }
+
   ## Replicate layout: left-packed NA padding, identical across observations.
-  miss1 <- is.na(Wtrain[, 1, , drop = TRUE])
-  if (is.null(dim(miss1))) miss1 <- matrix(miss1, nrow = R)
+  miss1 <- matrix(is.na(Wtrain[, 1, , drop = FALSE]), nrow = R, ncol = p)
   if (any(miss1[1, ])) {
     stop("Every predictor needs at least one replicate (first row of W must not be NA).")
   }
@@ -51,7 +112,7 @@ check_badgers_inputs <- function(ytrain, Wtrain, ytune, Wtune, ytest, Wtest,
     W <- sets[[nm]]$W
     n <- dim(W)[2]
     expected <- aperm(array(miss1, dim = c(R, p, n)), c(1, 3, 2))
-    if (!identical(is.na(W), expected)) {
+    if (!all(is.na(W) == expected)) {
       stop(sprintf(
         "The NA pattern of W%s must be the same for every observation%s: each predictor needs the same number of replicates throughout.",
         nm, if (nm == "train") "" else " and match Wtrain"))
@@ -89,6 +150,10 @@ badgers_mcmc <- function(
 ) {
 
   check_badgers_inputs(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph)
+  check_mcmc_controls(n_iter, burnin, k, a_sigma, b_sigma, a_iota, b_iota,
+                      a_rho, b_rho, eta, epsilon, c_graph, lite, verbose)
+  check_scalar(mu, "mu")
+  check_scalar(nu, "nu", 0, open_lower = TRUE)
 
   start.time <- Sys.time()
 
@@ -135,6 +200,12 @@ badgers <- function(
     lite = TRUE
 ) {
 
+  check_badgers_inputs(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph)
+  check_mcmc_controls(n_iter, burnin, k, a_sigma, b_sigma, a_iota, b_iota,
+                      a_rho, b_rho, eta, epsilon, c_graph, lite, verbose)
+  check_grid(mu_grid, "mu_grid")
+  check_grid(nu_grid, "nu_grid", positive = TRUE)
+
   n_mu <- length(mu_grid)
   n_nu <- length(nu_grid)
 
@@ -148,6 +219,8 @@ badgers <- function(
   best_result <- NULL
   best_mu <- NA_real_
   best_nu <- NA_real_
+  grid_errors <- matrix(NA_character_, n_mu, n_nu,
+                        dimnames = dimnames(MSPE_tune_grid))
 
   for (a in seq_len(n_mu)) for (b in seq_len(n_nu)) {
 
@@ -170,12 +243,17 @@ badgers <- function(
         c_graph = c_graph, lite = lite, verbose = FALSE
       ),
       error = function(e) {
+        grid_errors[a, b] <<- conditionMessage(e)
         if (verbose) cat("ERROR:", conditionMessage(e), "\n")
         NULL
       }
     )
 
     if (is.null(out)) next
+    if (!is.finite(out$MSPE_tune) || !is.finite(out$MSPE_test)) {
+      grid_errors[a, b] <- "Sampler returned a non-finite prediction error."
+      next
+    }
 
     MSPE_tune_grid[a, b] <- out$MSPE_tune
     MSPE_test_grid[a, b] <- out$MSPE_test
@@ -193,7 +271,14 @@ badgers <- function(
     }
   }
 
-  if (is.null(best_result)) stop("All grid points failed.")
+  if (is.null(best_result)) {
+    stop("All grid points failed. First error: ",
+         grid_errors[!is.na(grid_errors)][1], call. = FALSE)
+  }
+  if (any(!is.na(grid_errors))) {
+    warning("Some grid points failed; inspect grid_errors in the returned fit.",
+            call. = FALSE)
+  }
 
   if (verbose) {
     cat(sprintf("\nBest: mu=%.2f nu=%.2f  MSPE_tune=%.3f MSPE_test=%.3f\n",
@@ -207,7 +292,8 @@ badgers <- function(
       c_graph = c_graph,
       best_result = best_result,
       MSPE_tune_grid = MSPE_tune_grid,
-      MSPE_test_grid = MSPE_test_grid
+      MSPE_test_grid = MSPE_test_grid,
+      grid_errors = grid_errors
     ),
     class = "badgers"
   )
@@ -237,6 +323,13 @@ dg_batch <- function(
     batch = 0,
     verbose = TRUE
 ) {
+
+  check_scalar(R, "R", 0, .Machine$integer.max, integer = TRUE)
+  check_scalar(batch, "batch", 0, .Machine$integer.max - R, integer = TRUE)
+  check_scalar(seed, "seed", -.Machine$integer.max, .Machine$integer.max - batch - R, integer = TRUE)
+  check_flag(verbose, "verbose")
+  if (!is.character(head) || length(head) != 1L || is.na(head) ||
+      !dir.exists(head)) stop("head must name an existing directory.", call. = FALSE)
 
   if (verbose) {
     cat("Generating mode:", Gmode, "\n")
@@ -276,18 +369,41 @@ dg <- function(
     savefile = NULL
 ) {
 
+  counts <- list(p = p, g = g, ntrain = ntrain, ntune = ntune,
+                 ntest = ntest, num_rep = num_rep)
+  for (nm in names(counts)) {
+    check_scalar(counts[[nm]], nm, 1, .Machine$integer.max, integer = TRUE)
+  }
+  check_scalar(seed, "seed", -.Machine$integer.max, .Machine$integer.max, integer = TRUE)
+  check_scalar(gsm, "gsm", 0)
+  check_scalar(qmin, "qmin", 0, p, integer = TRUE)
+  check_scalar(qmax, "qmax", qmin, p, integer = TRUE)
+  check_scalar(sigma2, "sigma2", 0)
+  check_scalar(rho2, "rho2", 0)
+  for (nm in c("edii", "ediu", "eduu", "Gthres")) {
+    check_scalar(get(nm), nm, 0, 1)
+  }
+  check_scalar(Gmode, "Gmode")
+  if (!is.null(savefile) && (!is.character(savefile) || length(savefile) != 1L ||
+                            is.na(savefile) || !nzchar(savefile))) {
+    stop("savefile must be NULL or a nonempty file name.", call. = FALSE)
+  }
+
   set.seed(seed)
 
   ## ---- Number of nonzero coefficients, uniform on qmin:qmax ----
-  q <- sample(qmin:qmax, 1)
+  q <- qmin + sample.int(qmax - qmin + 1L, 1L) - 1L
 
   n <- ntrain
   pathway <- matrix(FALSE, p, g)
   ngene <- rpois(g, gsm)
   ngene[1] <- max(ngene[1], q)
-  pathway[1:ngene[1], 1] <- TRUE
-  for (i in 2:g) {
-    pathway[sample(1:p, ngene[i]), i] <- TRUE
+  if (any(ngene > p)) {
+    stop("A Poisson pathway size exceeds p; increase p or reduce gsm.", call. = FALSE)
+  }
+  pathway[seq_len(ngene[1]), 1] <- TRUE
+  for (i in seq_len(g)[-1L]) {
+    pathway[sample.int(p, ngene[i]), i] <- TRUE
   }
 
   ## ---- True graph G0: edges inside pathways ----
@@ -325,7 +441,7 @@ dg <- function(
   A <- diag(1, p, p)
   A[idx] <- sample(c(-1, 1), nE0, TRUE)
   A <- A * t(A)
-  A[1:q, 1:q] <- abs(A[1:q, 1:q])
+  A[seq_len(q), seq_len(q)] <- abs(A[seq_len(q), seq_len(q), drop = FALSE])
 
   ## Off-diagonals are divided by 1.1 * max(sumA_j, sumA_k), where sumA is
   ## degree + 1, so row j has sum_k |A_jk| < 1 and A is positive definite.
@@ -352,18 +468,21 @@ dg <- function(
   W <- apply(X, c(1, 2), function(x) {
     x + rnorm(num_rep, 0, sd = sqrt(rho2))
   })
+  W <- array(W, dim = c(num_rep, n, p))
   y <- drop(X %*% beta + sqrt(sigma2) * rnorm(n))
 
   Xtune <- matrix(rnorm(ntune * p), ntune) %*% t(chol_A_t_norm)
   Wtune <- apply(Xtune, c(1, 2), function(x) {
     x + rnorm(num_rep, 0, sd = sqrt(rho2))
   })
+  Wtune <- array(Wtune, dim = c(num_rep, ntune, p))
   ytune <- drop(Xtune %*% beta + sqrt(sigma2) * rnorm(ntune))
 
   Xtest <- matrix(rnorm(ntest * p), ntest) %*% t(chol_A_t_norm)
   Wtest <- apply(Xtest, c(1, 2), function(x) {
     x + rnorm(num_rep, 0, sd = sqrt(rho2))
   })
+  Wtest <- array(Wtest, dim = c(num_rep, ntest, p))
   ytest <- drop(Xtest %*% beta + sqrt(sigma2) * rnorm(ntest))
 
   ## ---- Working graph G given to the sampler ----
@@ -372,36 +491,24 @@ dg <- function(
   } else {
     ## Keep the top Gthres fraction of G0 edges ranked by |partial
     ## correlation|, then add random edges so that |G| = |G0|.
-    uni_index <- which(E0[, 1] < E0[, 2])
-    E_tmp <- E0[uni_index, ]
-    pcor_tmp <- pcor[uni_index]
+    E_tmp <- E0[E0[, 1] < E0[, 2], , drop = FALSE]
+    pcor_tmp <- pcor[E0[, 1] < E0[, 2]]
     odr_tmp <- order(abs(pcor_tmp), decreasing = TRUE)
     num_remain <- round(Gthres * nrow(E_tmp))
-    incl <- odr_tmp[1:num_remain]
-    E <- E_tmp[incl, ]
-    E <- rbind(E, cbind(E[, 2], E[, 1]))
-    E1 <- E[order(E[, 1], E[, 2]), ]
-    e <- nE0 / 2
-
-    A_tilde <- Matrix::rsparsematrix(
-      p, p, nnz = e + p, symmetric = TRUE, rand.x = function(n) return(1)
-    )
-    A_tilde[lower.tri(A_tilde, diag = TRUE)] <- 0
-    E2 <- which(A_tilde == 1, arr.ind = TRUE)
-
-    ## Drop random edges that are already in E1 (and any duplicates).
-    key2 <- E2[, 1] + p * (E2[, 2] - 1)
-    key1 <- E1[, 1] + p * (E1[, 2] - 1)
-    E3 <- E2[!(key2 %in% key1) & !duplicated(key2), , drop = FALSE]
-    E3 <- E3[sample(1:nrow(E3), e - nrow(E1) / 2), ]
-
-    E <- rbind(E1, E3, cbind(E3[, 2], E3[, 1]))
-    E <- E[order(E[, 1], E[, 2]), ]
+    retained <- E_tmp[odr_tmp[seq_len(num_remain)], , drop = FALSE]
+    candidates <- which(upper.tri(matrix(FALSE, p, p)), arr.ind = TRUE)
+    key <- function(x) x[, 1] + p * (x[, 2] - 1)
+    candidates <- candidates[!key(candidates) %in% key(retained), , drop = FALSE]
+    added <- candidates[sample.int(nrow(candidates), nrow(E_tmp) - num_remain),
+                        , drop = FALSE]
+    E <- rbind(retained, added)
+    E <- rbind(E, E[, 2:1, drop = FALSE])
+    E <- unname(E[order(E[, 1], E[, 2]), , drop = FALSE])
   }
   nE <- nrow(E)
 
   graph <- matrix(0, nrow = p, ncol = p)
-  for (e in 1:nrow(E)) {
+  for (e in seq_len(nrow(E))) {
     graph[E[e, 1], E[e, 2]] <- 1
   }
 
