@@ -142,17 +142,20 @@ cat("Selected by 80% interval:", which(fit$best_result$CI80 != 0), "\n")
 
 # Fixed-(mu, nu, psi) MCMC
 
-For a single fixed `(mu, nu, psi)`, call `badgers_mcmc()` directly:
+For a single fixed `(mu, nu, psi)`, call `badgers_mcmc()` directly. The call
+below uses the values selected above, `mu = 1`, `nu = 0.5` and `psi = 6`, and
+the same seed, so it reproduces the selected run:
 
 ```{r fixed-mu-nu}
-set.seed(789)
+set.seed(456)
 fit_one <- badgers_mcmc(
   ytrain = sim$y, Wtrain = sim$W,
   ytune = sim$ytune, Wtune = sim$Wtune,
   ytest = sim$ytest, Wtest = sim$Wtest,
   adj_graph = sim$graph,
-  mu = 3,
-  nu = 3,
+  mu = 1,
+  nu = 0.5,
+  psi = 6,
   n_iter = n_iter,
   burnin = burnin
 )
