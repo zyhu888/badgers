@@ -71,34 +71,34 @@ fit <- badgers(
   ytrain = sim$y, Wtrain = sim$W,
   ytune = sim$ytune, Wtune = sim$Wtune,
   ytest = sim$ytest, Wtest = sim$Wtest,
-  adj_graph = sim$graph, mu_grid = c(1, 3), nu_grid = 1, psi_grid = 6,
+  adj_graph = sim$graph, mu_grid = c(1, 3), nu_grid = 0.5, psi_grid = 6,
   n_iter = 100, burnin = 50, verbose = FALSE
 )
 print(fit)
 #> BADGERS fit
-#> Selected mu: 3 
-#> Selected nu: 1 
+#> Selected mu: 1 
+#> Selected nu: 0.5 
 #> Selected psi: 6 
-#> Tuning MSPE: 4.363395 
-#> Test MSPE: 5.974529 
+#> Tuning MSPE: 4.616192 
+#> Test MSPE: 4.419501 
 #> 
 #> Nonzero coefficients by credible interval:
-#>   95%: 0
-#>   90%: 0
-#>   80%: 1
+#>   95%: 1
+#>   90%: 1
+#>   80%: 2
 #> 
 #> Tuning MSPE over the (mu, nu, psi) grid:
 #> 
 #> psi = 6
 #>    nu
-#> mu         1
-#>   1 7.912984
-#>   3 4.363395
+#> mu       0.5
+#>   1 4.616192
+#>   3 6.181498
 fit$best_result$beta_mean
-#> [1]  0.53581721  0.53580288  0.02255819 -0.03233261  0.01734638  0.01843885
-#> [7] -0.01275880 -0.01409319
+#> [1]  0.53498905  0.84629650  0.09337824 -0.09737484 -0.03659978 -0.20246820
+#> [7] -0.50748127 -0.05854593
 which(fit$best_result$CI95 != 0)
-#> integer(0)
+#> [1] 1
 ```
 
 This short chain demonstrates the interface. For inference, run longer,
