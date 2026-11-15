@@ -246,13 +246,15 @@ check_badgers_inputs <- function(ytrain, Wtrain, ytune, Wtune, ytest, Wtest,
 #'   Gthres = 1
 #' )
 #'
+#' set.seed(456)
 #' fit <- badgers_mcmc(
 #'   ytrain = sim$y, Wtrain = sim$W,
 #'   ytune = sim$ytune, Wtune = sim$Wtune,
 #'   ytest = sim$ytest, Wtest = sim$Wtest,
 #'   adj_graph = sim$graph,
-#'   mu = 3,
-#'   nu = 3,
+#'   mu = 1,
+#'   nu = 0.5,
+#'   psi = 6,
 #'   n_iter = 100,
 #'   burnin = 50
 #' )
@@ -461,6 +463,29 @@ badgers_mcmc <- function(
 #'   mu_grid = c(1, 3),
 #'   nu_grid = 0.5,
 #'   psi_grid = 6,
+#'   n_iter = 100,
+#'   burnin = 50,
+#'   verbose = FALSE
+#' )
+#'
+#' print(fit)
+#'
+#' cat("Test MSPE:", fit$best_result$MSPE_test, "\n")
+#' cat("True nonzero coefficients:", which(sim$beta != 0), "\n")
+#' cat("Selected by 95% interval:", which(fit$best_result$CI95 != 0), "\n")
+#' cat("Selected by 90% interval:", which(fit$best_result$CI90 != 0), "\n")
+#' cat("Selected by 80% interval:", which(fit$best_result$CI80 != 0), "\n")
+#'
+#' # A larger grid that also tunes psi.
+#' set.seed(456)
+#' fit <- badgers(
+#'   ytrain = sim$y, Wtrain = sim$W,
+#'   ytune = sim$ytune, Wtune = sim$Wtune,
+#'   ytest = sim$ytest, Wtest = sim$Wtest,
+#'   adj_graph = sim$graph,
+#'   mu_grid = c(1, 3, 5),
+#'   nu_grid = c(0.5, 1, 2),
+#'   psi_grid = c(4, 5, 6),
 #'   n_iter = 100,
 #'   burnin = 50,
 #'   verbose = FALSE

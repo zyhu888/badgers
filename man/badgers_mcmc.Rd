@@ -154,13 +154,15 @@ sim <- dg(
   Gthres = 1
 )
 
+set.seed(456)
 fit <- badgers_mcmc(
   ytrain = sim$y, Wtrain = sim$W,
   ytune = sim$ytune, Wtune = sim$Wtune,
   ytest = sim$ytest, Wtest = sim$Wtest,
   adj_graph = sim$graph,
-  mu = 3,
-  nu = 3,
+  mu = 1,
+  nu = 0.5,
+  psi = 6,
   n_iter = 100,
   burnin = 50
 )
