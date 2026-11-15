@@ -21,7 +21,13 @@ prediction error.
 
 `badgers` contains compiled C++ code, so a C++ toolchain is required
 (Xcode command line tools on macOS, Rtools on Windows). You can install
-`badgers` from GitHub with:
+`badgers` from a local source checkout with:
+
+``` sh
+R CMD INSTALL .
+```
+
+Once the GitHub repository is publicly accessible, install it with:
 
 ``` r
 # install.packages("devtools")
@@ -52,6 +58,68 @@ replicates: put the replicates of predictor `j` in the first rows of
 `W[, , j]` and pad the remaining rows with `NA`, using the same pattern
 for every observation. The working graph is a `p` by `p` 0/1 adjacency
 matrix.
+
+## Reproducible Example
+
+``` r
+library(badgers)
+sim <- dg(seed = 123, p = 8, g = 2, gsm = 2,
+          qmin = 2, qmax = 3, ntrain = 12, ntune = 12, ntest = 12)
+
+set.seed(456)
+fit <- badgers(
+  ytrain = sim$y, Wtrain = sim$W,
+  ytune = sim$ytune, Wtune = sim$Wtune,
+  ytest = sim$ytest, Wtest = sim$Wtest,
+  adj_graph = sim$graph, mu_grid = c(1, 3), nu_grid = 1,
+  n_iter = 100, burnin = 50, verbose = FALSE
+)
+print(fit)
+#> BADGERS fit
+#> Selected mu: 3 
+#> Selected nu: 1 
+#> Tuning MSPE: 4.363395 
+#> Test MSPE: 5.974529 
+#> 
+#> Nonzero coefficients by credible interval:
+#>   95%: 0
+#>   90%: 0
+#>   80%: 1
+#> 
+#> Tuning MSPE over the (mu, nu) grid:
+#>    nu
+#> mu         1
+#>   1 7.912984
+#>   3 4.363395
+fit$best_result$beta_mean
+#> [1]  0.53581721  0.53580288  0.02255819 -0.03233261  0.01734638  0.01843885
+#> [7] -0.01275880 -0.01409319
+which(fit$best_result$CI95 != 0)
+#> integer(0)
+```
+
+This short chain demonstrates the interface. For inference, run longer,
+independent chains and assess mixing, effective sample sizes, and
+sensitivity. The defaults are 10000 iterations and 5000 burn-in; these
+counts do not ensure convergence. Proposal adaptation continues after
+burn-in.
+
+`CI95`, `CI90`, and `CI80` contain posterior means set to zero when the
+corresponding equal-tailed credible interval includes zero. They contain
+coefficient estimates, not interval endpoints. Full coefficient draws,
+including burn-in, are in `fit$best_result$BETA`.
+
+The model has no intercept or automatic centering/scaling and assumes
+zero-mean latent covariates. Estimate any preprocessing using training
+data and apply it consistently to validation and test data. Missing
+responses and non-finite observed values are rejected. Adjacency
+matrices must be symmetric; the diagonal is ignored. Select parameters
+using validation MSPE and reserve test outcomes for final evaluation.
+Failed grid points produce a warning and are recorded in
+`fit$grid_errors`.
+
+See `vignette("badgers-introduction", package = "badgers")` for the
+workflow.
 
 ## Parallel Runs
 

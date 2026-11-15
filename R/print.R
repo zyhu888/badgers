@@ -1,3 +1,4 @@
+#' @export
 print.badgers <- function(x, ...) {
   cat("BADGERS fit\n")
   cat("Selected mu:", x$best_mu, "\n")
