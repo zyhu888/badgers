@@ -146,7 +146,7 @@ summarize <- function(res) {
 }
 
 ## ---- Step 1: coarse grid over (psi, mu, nu) ----
-coarse_grid <- expand.grid(psi = c(4, 6), mu = c(1, 3, 5), nu = c(1, 3, 5))
+coarse_grid <- expand.grid(psi = 6, mu = c(1, 3), nu = c(0.5, 1))
 coarse_res <- run_grid(coarse_grid, "coarse")
 coarse_table <- summarize(coarse_res)
 coarse_best <- coarse_table[which.min(coarse_table$MSPE_tune), ]
