@@ -18,10 +18,11 @@ print.badgers <- function(x, ...) {
 
   g <- x$MSPE_tune_grid
   if (!is.null(g)) {
+    cat("\nTuning MSPE over the (mu, nu, psi) grid:\n")
     psi_vals <- dimnames(g)$psi
     for (h in seq_along(psi_vals)) {
-      cat(sprintf("\nTuning MSPE over the (mu, nu) grid, psi = %s:\n", psi_vals[h]))
-      print(g[, , h])
+      cat(sprintf("\npsi = %s\n", psi_vals[h]))
+      print(matrix(g[, , h], dim(g)[1], dim(g)[2], dimnames = dimnames(g)[1:2]))
     }
   }
   invisible(x)

@@ -459,6 +459,7 @@ badgers_mcmc <- function(
 #'   adj_graph = sim$graph,
 #'   mu_grid = c(1, 3),
 #'   nu_grid = c(1, 3),
+#'   psi_grid = 6,
 #'   n_iter = 100,
 #'   burnin = 50,
 #'   verbose = FALSE

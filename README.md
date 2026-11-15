@@ -71,13 +71,14 @@ fit <- badgers(
   ytrain = sim$y, Wtrain = sim$W,
   ytune = sim$ytune, Wtune = sim$Wtune,
   ytest = sim$ytest, Wtest = sim$Wtest,
-  adj_graph = sim$graph, mu_grid = c(1, 3), nu_grid = 1,
+  adj_graph = sim$graph, mu_grid = c(1, 3), nu_grid = 1, psi_grid = 6,
   n_iter = 100, burnin = 50, verbose = FALSE
 )
 print(fit)
 #> BADGERS fit
 #> Selected mu: 3 
 #> Selected nu: 1 
+#> Selected psi: 6 
 #> Tuning MSPE: 4.363395 
 #> Test MSPE: 5.974529 
 #> 
@@ -86,7 +87,9 @@ print(fit)
 #>   90%: 0
 #>   80%: 1
 #> 
-#> Tuning MSPE over the (mu, nu) grid:
+#> Tuning MSPE over the (mu, nu, psi) grid:
+#> 
+#> psi = 6
 #>    nu
 #> mu         1
 #>   1 7.912984
