@@ -194,9 +194,9 @@ fit <- badgers(
   ytune = sim$ytune, Wtune = sim$Wtune,
   ytest = sim$ytest, Wtest = sim$Wtest,
   adj_graph = sim$graph,
-  mu_grid = c(1, 3, 5),
-  nu_grid = c(0.5, 1, 2),
-  psi_grid = c(4, 5, 6),
+  mu_grid = c(1, 3),
+  nu_grid = c(0.5, 1),
+  psi_grid = c(5, 6),
   n_iter = 100,
   burnin = 50,
   verbose = FALSE
