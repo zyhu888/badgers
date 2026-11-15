@@ -110,8 +110,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // update_phi_cpp
-List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_, NumericVector alpha, double mu, double eta, double epsilon, double nu);
-RcppExport SEXP _badgers_update_phi_cpp(SEXP phi_SEXP, SEXP inv_phi_SEXP, SEXP alphaSEXP, SEXP muSEXP, SEXP etaSEXP, SEXP epsilonSEXP, SEXP nuSEXP) {
+List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_, NumericVector alpha, double mu, double eta, double zeta, double nu);
+RcppExport SEXP _badgers_update_phi_cpp(SEXP phi_SEXP, SEXP inv_phi_SEXP, SEXP alphaSEXP, SEXP muSEXP, SEXP etaSEXP, SEXP zetaSEXP, SEXP nuSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -120,9 +120,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type alpha(alphaSEXP);
     Rcpp::traits::input_parameter< double >::type mu(muSEXP);
     Rcpp::traits::input_parameter< double >::type eta(etaSEXP);
-    Rcpp::traits::input_parameter< double >::type epsilon(epsilonSEXP);
+    Rcpp::traits::input_parameter< double >::type zeta(zetaSEXP);
     Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
-    rcpp_result_gen = Rcpp::wrap(update_phi_cpp(phi_, inv_phi_, alpha, mu, eta, epsilon, nu));
+    rcpp_result_gen = Rcpp::wrap(update_phi_cpp(phi_, inv_phi_, alpha, mu, eta, zeta, nu));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -198,8 +198,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // badgers_mcmc_cpp
-List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_, NumericVector ytune, NumericVector Wtune_, NumericVector ytest, NumericVector Wtest_, NumericMatrix adj_graph, int n_iter, int burnin, int k, double a_sigma, double b_sigma, double a_iota, double b_iota, double a_rho, double b_rho, double eta, double epsilon, double mu, double nu, double c_graph, bool lite, bool verbose);
-RcppExport SEXP _badgers_badgers_mcmc_cpp(SEXP ytrainSEXP, SEXP Wtrain_SEXP, SEXP ytuneSEXP, SEXP Wtune_SEXP, SEXP ytestSEXP, SEXP Wtest_SEXP, SEXP adj_graphSEXP, SEXP n_iterSEXP, SEXP burninSEXP, SEXP kSEXP, SEXP a_sigmaSEXP, SEXP b_sigmaSEXP, SEXP a_iotaSEXP, SEXP b_iotaSEXP, SEXP a_rhoSEXP, SEXP b_rhoSEXP, SEXP etaSEXP, SEXP epsilonSEXP, SEXP muSEXP, SEXP nuSEXP, SEXP c_graphSEXP, SEXP liteSEXP, SEXP verboseSEXP) {
+List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_, NumericVector ytune, NumericVector Wtune_, NumericVector ytest, NumericVector Wtest_, NumericMatrix adj_graph, int n_iter, int burnin, int k, double a_sigma, double b_sigma, double a_iota, double b_iota_diag, double psi, double a_rho, double b_rho, double eta, double zeta, double mu, double nu, double c, bool lite, bool verbose);
+RcppExport SEXP _badgers_badgers_mcmc_cpp(SEXP ytrainSEXP, SEXP Wtrain_SEXP, SEXP ytuneSEXP, SEXP Wtune_SEXP, SEXP ytestSEXP, SEXP Wtest_SEXP, SEXP adj_graphSEXP, SEXP n_iterSEXP, SEXP burninSEXP, SEXP kSEXP, SEXP a_sigmaSEXP, SEXP b_sigmaSEXP, SEXP a_iotaSEXP, SEXP b_iota_diagSEXP, SEXP psiSEXP, SEXP a_rhoSEXP, SEXP b_rhoSEXP, SEXP etaSEXP, SEXP zetaSEXP, SEXP muSEXP, SEXP nuSEXP, SEXP cSEXP, SEXP liteSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -216,17 +216,18 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type a_sigma(a_sigmaSEXP);
     Rcpp::traits::input_parameter< double >::type b_sigma(b_sigmaSEXP);
     Rcpp::traits::input_parameter< double >::type a_iota(a_iotaSEXP);
-    Rcpp::traits::input_parameter< double >::type b_iota(b_iotaSEXP);
+    Rcpp::traits::input_parameter< double >::type b_iota_diag(b_iota_diagSEXP);
+    Rcpp::traits::input_parameter< double >::type psi(psiSEXP);
     Rcpp::traits::input_parameter< double >::type a_rho(a_rhoSEXP);
     Rcpp::traits::input_parameter< double >::type b_rho(b_rhoSEXP);
     Rcpp::traits::input_parameter< double >::type eta(etaSEXP);
-    Rcpp::traits::input_parameter< double >::type epsilon(epsilonSEXP);
+    Rcpp::traits::input_parameter< double >::type zeta(zetaSEXP);
     Rcpp::traits::input_parameter< double >::type mu(muSEXP);
     Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
-    Rcpp::traits::input_parameter< double >::type c_graph(c_graphSEXP);
+    Rcpp::traits::input_parameter< double >::type c(cSEXP);
     Rcpp::traits::input_parameter< bool >::type lite(liteSEXP);
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(badgers_mcmc_cpp(ytrain, Wtrain_, ytune, Wtune_, ytest, Wtest_, adj_graph, n_iter, burnin, k, a_sigma, b_sigma, a_iota, b_iota, a_rho, b_rho, eta, epsilon, mu, nu, c_graph, lite, verbose));
+    rcpp_result_gen = Rcpp::wrap(badgers_mcmc_cpp(ytrain, Wtrain_, ytune, Wtune_, ytest, Wtest_, adj_graph, n_iter, burnin, k, a_sigma, b_sigma, a_iota, b_iota_diag, psi, a_rho, b_rho, eta, zeta, mu, nu, c, lite, verbose));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -243,7 +244,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_badgers_update_rho2_cpp", (DL_FUNC) &_badgers_update_rho2_cpp, 5},
     {"_badgers_update_gamma_cpp", (DL_FUNC) &_badgers_update_gamma_cpp, 11},
     {"_badgers_adapt_alpha_sd_cpp", (DL_FUNC) &_badgers_adapt_alpha_sd_cpp, 6},
-    {"_badgers_badgers_mcmc_cpp", (DL_FUNC) &_badgers_badgers_mcmc_cpp, 23},
+    {"_badgers_badgers_mcmc_cpp", (DL_FUNC) &_badgers_badgers_mcmc_cpp, 24},
     {NULL, NULL, 0}
 };
 

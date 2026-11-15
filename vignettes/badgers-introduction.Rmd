@@ -30,12 +30,12 @@ to have the same effect.
 The package implements:
 
 1. `badgers()`  
-  The primary user-facing function. It fits a grid of `(mu, nu)` values and
-  selects the final pair using the validation mean squared prediction error
-  (MSPE).
+  The primary user-facing function. It fits a grid of `(mu, nu)` values, and
+  optionally `psi`, and selects the final combination using the validation
+  mean squared prediction error (MSPE).
 
 2. `badgers_mcmc()`  
-  The fixed-`(mu, nu)` sampler used internally by `badgers()`. This is useful
+  The fixed-`(mu, nu, psi)` sampler used internally by `badgers()`. This is useful
   for large-scale parallel workflows where each grid point is run separately.
 
 3. `dg()` and `dg_batch()`  
@@ -108,7 +108,9 @@ beta_true <- sim$beta
 
 Use `badgers()` to fit the `(mu, nu)` grid and select the pair with the
 smallest validation MSPE. The example below searches over `mu, nu` in
-`{1, 3, 5}` and reports the test MSPE and the selected predictors.
+`{1, 3, 5}` with `psi` fixed at its default of 6 and reports the test MSPE and
+the selected predictors. To tune `psi` as well, as in the paper, pass for
+example `psi_grid = 2:6`.
 
 ```{r badgers-fit, eval = FALSE}
 fit <- badgers(
@@ -131,9 +133,9 @@ cat("Selected by 90% interval:", which(fit$best_result$CI90 != 0), "\n")
 cat("Selected by 80% interval:", which(fit$best_result$CI80 != 0), "\n")
 ```
 
-# Fixed-(mu, nu) MCMC
+# Fixed-(mu, nu, psi) MCMC
 
-For a single fixed `(mu, nu)`, call `badgers_mcmc()` directly:
+For a single fixed `(mu, nu, psi)`, call `badgers_mcmc()` directly:
 
 ```{r fixed-mu-nu, eval = FALSE}
 fit_one <- badgers_mcmc(
@@ -157,7 +159,7 @@ cat("Selected by 80% interval:", which(fit_one$CI80 != 0), "\n")
 The paper settings are `n_iter = 10000` and `burnin = 5000`, which are the
 defaults of `badgers()` and `badgers_mcmc()`. This vignette uses 1000 and 500
 to keep the run time short; use the defaults for real analyses. For large grids, see the `parallel-runs` vignette for a template that
-runs fixed-`(mu, nu)` jobs in parallel and combines the MSPE values afterward.
+runs fixed-`(mu, nu, psi)` jobs in parallel and combines the MSPE values afterward.
 
 # Selecting Predictors
 

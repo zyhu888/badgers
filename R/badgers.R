@@ -78,12 +78,13 @@ badgers_mcmc <- function(
     a_sigma = 1,
     b_sigma = 1,
     a_iota = 1,
-    b_iota = 1e-2,
+    b_iota_diag = 1e-2,
+    psi = 6,
     a_rho = 1,
     b_rho = 1,
     eta = 10,
-    epsilon = 0.2,
-    c_graph = 2,
+    zeta = 0.2,
+    c = 2,
     lite = TRUE,
     verbose = FALSE
 ) {
@@ -96,10 +97,10 @@ badgers_mcmc <- function(
     ytrain = ytrain, Wtrain_ = Wtrain, ytune = ytune, Wtune_ = Wtune,
     ytest = ytest, Wtest_ = Wtest, adj_graph = adj_graph,
     n_iter = n_iter, burnin = burnin, k = k,
-    a_sigma = a_sigma, b_sigma = b_sigma, a_iota = a_iota, b_iota = b_iota,
-    a_rho = a_rho, b_rho = b_rho, eta = eta, epsilon = epsilon,
-    mu = mu, nu = nu, c_graph = c_graph, lite = lite,
-    verbose = verbose
+    a_sigma = a_sigma, b_sigma = b_sigma,
+    a_iota = a_iota, b_iota_diag = b_iota_diag, psi = psi,
+    a_rho = a_rho, b_rho = b_rho, eta = eta, zeta = zeta,
+    mu = mu, nu = nu, c = c, lite = lite, verbose = verbose
   )
 
   end.time <- Sys.time()
@@ -119,28 +120,30 @@ badgers <- function(
     adj_graph,
     mu_grid = c(1, 3, 5, 7, 9),
     nu_grid = c(1, 3, 5, 7, 9),
+    psi_grid = 6,
     n_iter = 10000,
     burnin = 5000,
     k = 50,
     a_sigma = 1,
     b_sigma = 1,
     a_iota = 1,
-    b_iota = 1e-2,
+    b_iota_diag = 1e-2,
     a_rho = 1,
     b_rho = 1,
     eta = 10,
-    epsilon = 0.2,
-    c_graph = 2,
+    zeta = 0.2,
+    c = 2,
     verbose = TRUE,
     lite = TRUE
 ) {
 
   n_mu <- length(mu_grid)
   n_nu <- length(nu_grid)
+  n_psi <- length(psi_grid)
 
-  MSPE_tune_grid <- matrix(
-    NA_real_, n_mu, n_nu,
-    dimnames = list(mu = mu_grid, nu = nu_grid)
+  MSPE_tune_grid <- array(
+    NA_real_, c(n_mu, n_nu, n_psi),
+    dimnames = list(mu = mu_grid, nu = nu_grid, psi = psi_grid)
   )
   MSPE_test_grid <- MSPE_tune_grid
 
@@ -148,11 +151,13 @@ badgers <- function(
   best_result <- NULL
   best_mu <- NA_real_
   best_nu <- NA_real_
+  best_psi <- NA_real_
 
-  for (a in seq_len(n_mu)) for (b in seq_len(n_nu)) {
+  for (h in seq_len(n_psi)) for (a in seq_len(n_mu)) for (b in seq_len(n_nu)) {
 
     if (verbose) {
-      cat(sprintf("mu=%.2f nu=%.2f ... ", mu_grid[a], nu_grid[b]))
+      cat(sprintf("psi=%g mu=%.2f nu=%.2f ... ",
+                  psi_grid[h], mu_grid[a], nu_grid[b]))
     }
 
     out <- tryCatch(
@@ -163,11 +168,11 @@ badgers <- function(
         adj_graph = adj_graph,
         n_iter = n_iter, burnin = burnin, k = k,
         a_sigma = a_sigma, b_sigma = b_sigma,
-        a_iota = a_iota, b_iota = b_iota,
+        a_iota = a_iota, b_iota_diag = b_iota_diag, psi = psi_grid[h],
         a_rho = a_rho, b_rho = b_rho,
-        eta = eta, epsilon = epsilon,
+        eta = eta, zeta = zeta,
         mu = mu_grid[a], nu = nu_grid[b],
-        c_graph = c_graph, lite = lite, verbose = FALSE
+        c = c, lite = lite, verbose = FALSE
       ),
       error = function(e) {
         if (verbose) cat("ERROR:", conditionMessage(e), "\n")
@@ -177,8 +182,8 @@ badgers <- function(
 
     if (is.null(out)) next
 
-    MSPE_tune_grid[a, b] <- out$MSPE_tune
-    MSPE_test_grid[a, b] <- out$MSPE_test
+    MSPE_tune_grid[a, b, h] <- out$MSPE_tune
+    MSPE_test_grid[a, b, h] <- out$MSPE_test
 
     if (verbose) {
       cat(sprintf("MSPE_tune=%.3f MSPE_test=%.3f\n",
@@ -190,21 +195,24 @@ badgers <- function(
       best_result <- out
       best_mu <- mu_grid[a]
       best_nu <- nu_grid[b]
+      best_psi <- psi_grid[h]
     }
   }
 
   if (is.null(best_result)) stop("All grid points failed.")
 
   if (verbose) {
-    cat(sprintf("\nBest: mu=%.2f nu=%.2f  MSPE_tune=%.3f MSPE_test=%.3f\n",
-                best_mu, best_nu, best_mspe_tune, best_result$MSPE_test))
+    cat(sprintf(
+      "\nBest: psi=%g mu=%.2f nu=%.2f  MSPE_tune=%.3f MSPE_test=%.3f\n",
+      best_psi, best_mu, best_nu, best_mspe_tune, best_result$MSPE_test))
   }
 
   structure(
     list(
       best_mu = best_mu,
       best_nu = best_nu,
-      c_graph = c_graph,
+      best_psi = best_psi,
+      c = c,
       best_result = best_result,
       MSPE_tune_grid = MSPE_tune_grid,
       MSPE_test_grid = MSPE_test_grid

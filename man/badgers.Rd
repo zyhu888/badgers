@@ -3,11 +3,11 @@
 \title{Fit BADGERS and Tune the Graph Hyperparameters}
 \usage{
 badgers(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph,
-  mu_grid = c(1, 3, 5, 7, 9), nu_grid = c(1, 3, 5, 7, 9),
+  mu_grid = c(1, 3, 5, 7, 9), nu_grid = c(1, 3, 5, 7, 9), psi_grid = 6,
   n_iter = 10000, burnin = 5000, k = 50,
-  a_sigma = 1, b_sigma = 1, a_iota = 1, b_iota = 1e-2,
-  a_rho = 1, b_rho = 1, eta = 10, epsilon = 0.2,
-  c_graph = 2, verbose = TRUE, lite = TRUE)
+  a_sigma = 1, b_sigma = 1, a_iota = 1, b_iota_diag = 1e-2,
+  a_rho = 1, b_rho = 1, eta = 10, zeta = 0.2,
+  c = 2, verbose = TRUE, lite = TRUE)
 }
 \arguments{
 \item{ytrain}{Numeric vector of training responses, of length \code{n}.}
@@ -19,27 +19,28 @@ badgers(ytrain, Wtrain, ytune, Wtune, ytest, Wtest, adj_graph,
 \item{adj_graph}{A \code{p} by \code{p} 0/1 adjacency matrix of the working graph among the predictors.}
 \item{mu_grid}{Candidate values of \code{mu}.}
 \item{nu_grid}{Candidate values of \code{nu}.}
+\item{psi_grid}{Candidate values of \code{psi}, the tuning parameter of the off-diagonal rates of the \eqn{\iota_{jk}} prior (see \code{?badgers_mcmc}). The default \code{6} keeps \code{psi} fixed, so only \code{(mu, nu)} are tuned; use for example \code{2:6} to tune \code{psi} as well.}
 \item{n_iter}{Number of MCMC iterations.}
 \item{burnin}{Number of burn-in iterations.}
 \item{k}{Number of iterations between adaptations of the Metropolis-Hastings proposal standard deviations for the log-shrinkage parameters.}
 \item{a_sigma, b_sigma}{Shape and scale of the inverse-Gamma prior on the residual variance \eqn{\sigma^2}.}
-\item{a_iota, b_iota}{Shape \code{a_iota} of the Gamma prior on the shrinkage parameters \eqn{\iota_{jk}} of the latent-covariate precision matrix, and its rate \code{b_iota} for the diagonal entries. The rates of the off-diagonal entries are determined by the working graph and \code{c_graph}.}
+\item{a_iota, b_iota_diag}{Shape \code{a_iota} of the Gamma prior on the shrinkage parameters \eqn{\iota_{jk}} of the latent-covariate precision matrix, and its rate \code{b_iota_diag} for the diagonal entries. The rates of the off-diagonal entries are determined by the working graph, \code{psi_grid} and \code{c}.}
 \item{a_rho, b_rho}{Shape and scale of the inverse-Gamma prior on the measurement error variance \eqn{\rho^2}.}
-\item{eta, epsilon}{Shape control \eqn{\eta} and scale control \eqn{\zeta} (called \code{epsilon} here) of the constrained Wishart prior on the precision matrix of the log-shrinkage parameters.}
-\item{c_graph}{Strength of the graph information, a scalar strictly between 0 and 6. The off-diagonal rates of the \eqn{\iota_{jk}} prior are \eqn{d_{jk}^{-1} 10^{-6 + c}}, where \eqn{d_{jk}} is the shortest-path distance between predictors \eqn{j} and \eqn{k} in \code{adj_graph}, and \eqn{10^{-6}} if they are not connected.}
-\item{verbose}{Logical; print one line per \code{(mu, nu)} grid point. The sampler itself is always silent here.}
+\item{eta, zeta}{Shape control \eqn{\eta} and scale control \eqn{\zeta} of the constrained Wishart prior on the precision matrix of the log-shrinkage parameters.}
+\item{c}{Strength of the graph-guided shrinkage, a positive constant. Larger values of \code{c} give less shrinkage of the precision matrix entries for connected pairs of predictors.}
+\item{verbose}{Logical; print one line per grid point. The sampler itself is always silent here.}
 \item{lite}{Logical; if \code{TRUE}, full parameter traces are not stored.}
 }
 \value{
-An object of class \code{badgers} with the selected \code{best_mu} and \code{best_nu}, the full result of the best run in \code{best_result}, and the tuning and test MSPE grids \code{MSPE_tune_grid} and \code{MSPE_test_grid}.
+An object of class \code{badgers} with the selected \code{best_mu}, \code{best_nu} and \code{best_psi}, the full result of the best run in \code{best_result}, and the tuning and test MSPE arrays \code{MSPE_tune_grid} and \code{MSPE_test_grid}, which have dimension \code{length(mu_grid)} by \code{length(nu_grid)} by \code{length(psi_grid)}.
 }
 \description{
-Runs \code{badgers_mcmc()} over a grid of \code{(mu, nu)} values and returns the model with the smallest validation mean squared prediction error.
+Runs \code{badgers_mcmc()} over a grid of \code{(mu, nu, psi)} values and returns the model with the smallest validation mean squared prediction error.
 }
 \details{
 \code{badgers()} is the primary interface for fitting BADGERS (Bayesian
 ADaptive Graph-guided Errors-in-variables Regression Solution). For each
-combination of \code{mu_grid} and \code{nu_grid}, the function calls
+combination of \code{psi_grid}, \code{mu_grid} and \code{nu_grid}, the function calls
 \code{badgers_mcmc()}, records the validation (tuning) and test mean squared
 prediction errors (MSPE), and keeps the run with the smallest tuning MSPE.
 A grid point that fails is skipped; an error is raised only if every grid
@@ -54,8 +55,9 @@ parameters \eqn{\alpha_j = \log \lambda_j} follow
 \eqn{N(\mu 1, \nu \Phi^{-1})}. The precision matrix \eqn{\Phi} has a
 constrained Wishart prior whose off-diagonal entries are zero for pairs of
 predictors that are not connected in \code{adj_graph}, so that connected
-predictors receive related shrinkage. The hyperparameters \code{mu} and
-\code{nu} are tuned on the grid.
+predictors receive related shrinkage. The hyperparameters \code{mu}, \code{nu}
+and \code{psi} are tuned on the grid; with the default \code{psi_grid = 6} only
+\code{mu} and \code{nu} are tuned.
 
 The defaults of the other arguments are the settings used in the paper:
 10000 iterations with 5000 burn-in iterations, and the coarse grid

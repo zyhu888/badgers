@@ -524,11 +524,11 @@ NumericVector update_tau_cpp(NumericVector beta, NumericVector alpha, double sig
 }
 
 // ---- Phi update (Gibbs, per-column with 0/1/>1-neighbor branches) ----
-// B is A_Phi = eta*(11^T + epsilon*I) + (alpha-mu)(alpha-mu)^T/nu
+// B is A_Phi = eta*(11^T + zeta*I) + (alpha-mu)(alpha-mu)^T/nu
 //
-// diag(epsilon,p) is a p x p matrix with epsilon on the diagonal and 0
+// diag(zeta,p) is a p x p matrix with zeta on the diagonal and 0
 // elsewhere (R's diag(x, nrow) form, not the diag(x)-is-identity-of-size-x
-// case), so eta*(diag(epsilon,p)+1) has eta*(epsilon+1) on the diagonal and
+// case), so eta*(diag(zeta,p)+1) has eta*(zeta+1) on the diagonal and
 // eta off it.
 //
 // The non_zero_phi draw in the >1-neighbor branch uses R's own
@@ -537,7 +537,7 @@ NumericVector update_tau_cpp(NumericVector beta, NumericVector alpha, double sig
 // [[Rcpp::export]]
 List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_,
                      NumericVector alpha, double mu,
-                     double eta, double epsilon, double nu) {
+                     double eta, double zeta, double nu) {
   int p = alpha.size();
   arma::mat phi = as<arma::mat>(phi_);
   arma::mat inv_phi = as<arma::mat>(inv_phi_);
@@ -549,12 +549,12 @@ List update_phi_cpp(NumericMatrix phi_, NumericMatrix inv_phi_,
   arma::mat B(p, p);
   for (int a = 0; a < p; ++a) {
     for (int b = 0; b < p; ++b) {
-      double base = (a == b) ? eta * (epsilon + 1.0) : eta;
+      double base = (a == b) ? eta * (zeta + 1.0) : eta;
       B(a, b) = base + outer_am(a, b) / nu;
     }
   }
 
-  double gamma_shape = 1.0 + (eta * (1.0 + epsilon) + 1.0) / 2.0;
+  double gamma_shape = 1.0 + (eta * (1.0 + zeta) + 1.0) / 2.0;
   int m_full = p - 1;
 
   for (int jj = 1; jj <= p; ++jj) {
@@ -911,14 +911,15 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
                   NumericMatrix adj_graph,
                   int n_iter, int burnin, int k,
                   double a_sigma, double b_sigma,
-                  double a_iota, double b_iota,
+                  double a_iota, double b_iota_diag,
+                  double psi,
                   double a_rho, double b_rho,
-                  double eta, double epsilon, double mu, double nu,
-                  double c_graph = 2.0, bool lite = true,
+                  double eta, double zeta, double mu, double nu,
+                  double c = 2.0, bool lite = true,
                   bool verbose = false) {
 
-  if (!R_FINITE(c_graph) || c_graph <= 0 || c_graph >= 6) {
-    stop("c_graph must be a finite scalar strictly between 0 and 6");
+  if (!R_FINITE(c) || c <= 0) {
+    stop("c must be a finite positive scalar");
   }
 
   IntegerVector dim_train = Wtrain_.attr("dim");
@@ -1027,7 +1028,9 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
     for (int v = 1; v <= p; ++v) { if (v - 1 == j0) continue; ind_noi_all(row++, j0) = v; }
   }
 
-  double b_iota_diag = b_iota;
+  if (!R_FINITE(psi) || psi <= 0) {
+    stop("psi must be a finite positive scalar");
+  }
 
   // Peterson et al. network-informed rate construction.
   arma::mat adj_gamma_d = as<arma::mat>(adj_graph);
@@ -1038,8 +1041,8 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
       adj_int(a, b) = (adj_gamma_d(a, b) != 0.0) ? 1 : 0;
   arma::mat dist_graph = badgers_stats::bfs_distances(adj_int);
 
-  double disconnected_rate = 1e-6;
-  double graph_rate_scale = std::pow(10.0, -6.0 + c_graph);
+  double disconnected_rate = std::pow(10.0, -psi);  // b_{iota,jk} = 10^-psi for pairs without a path
+  double graph_rate_scale = std::pow(10.0, std::log10(disconnected_rate) + c);
   arma::mat b_iota_graph(p, p);
   b_iota_graph.fill(disconnected_rate);
   for (int a = 0; a < p; ++a) {
@@ -1086,7 +1089,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
 
     // ---- Phi ----
     {
-      List out = update_phi_cpp(phi, inv_phi, alpha, mu, eta, epsilon, nu);
+      List out = update_phi_cpp(phi, inv_phi, alpha, mu, eta, zeta, nu);
       phi = as<NumericMatrix>(out["phi"]);
       inv_phi = as<NumericMatrix>(out["inv_phi"]);
     }
@@ -1162,12 +1165,12 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
   NumericVector ytune_hat(ntune), ytest_hat(ntest);
   for (int ii = 0; ii < ntune; ++ii) {
     long double s = 0.0L;
-    for (int c = burnin; c < n_iter; ++c) s += Ytune_hat_a(ii, c);
+    for (int it = burnin; it < n_iter; ++it) s += Ytune_hat_a(ii, it);
     ytune_hat[ii] = (double) (s / n_keep);
   }
   for (int ii = 0; ii < ntest; ++ii) {
     long double s = 0.0L;
-    for (int c = burnin; c < n_iter; ++c) s += Ytest_hat_a(ii, c);
+    for (int it = burnin; it < n_iter; ++it) s += Ytest_hat_a(ii, it);
     ytest_hat[ii] = (double) (s / n_keep);
   }
 
@@ -1181,7 +1184,7 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
   NumericVector beta_mean(p), Beta_95(p), Beta_90(p), Beta_80(p);
   for (int j = 0; j < p; ++j) {
     std::vector<double> row_vals(n_keep);
-    for (int c = 0; c < n_keep; ++c) row_vals[c] = BETA_a(j, burnin + c);
+    for (int it = 0; it < n_keep; ++it) row_vals[it] = BETA_a(j, burnin + it);
     beta_mean[j] = badgers_stats::mean_twopass(row_vals);
 
     double q025 = badgers_stats::quantile7(row_vals, 0.025);
@@ -1206,7 +1209,8 @@ List badgers_mcmc_cpp(NumericVector ytrain, NumericVector Wtrain_,
     _["MSPE_tune"] = MSPE_tune,
     _["mu"] = mu,
     _["nu"] = nu,
-    _["c_graph"] = c_graph,
+    _["psi"] = psi,
+    _["c"] = c,
     _["BETA"] = BETA,
     _["r_alpha"] = r_alpha,
     _["acs_alpha"] = acs_alpha,

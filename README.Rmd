@@ -22,8 +22,8 @@ regression model for high-dimensional data with replicated covariates and
 measurement error. Latent covariates are inferred from the replicate
 measurements, which may differ in number across predictors, and a working
 graph links the predictor-specific shrinkage parameters through a constrained
-Wishart prior. The log-shrinkage mean and scale `(mu, nu)` are selected by
-minimizing the validation mean squared prediction error.
+Wishart prior. The tuning parameters `(mu, nu, psi)` are selected by minimizing
+the validation mean squared prediction error.
 
 ## Installation
 
@@ -39,9 +39,10 @@ devtools::install_github("zyhu888/badgers")
 ## Main Functions
 
 - `badgers()` is the primary user-facing function. It fits a grid of
-  `(mu, nu)` values and returns the run with the smallest validation MSPE.
+  `(mu, nu)` values, and optionally `psi`, and returns the run with the smallest
+  validation MSPE.
 
-- `badgers_mcmc()` runs the MCMC sampler for a fixed `(mu, nu)`.
+- `badgers_mcmc()` runs the MCMC sampler for fixed `(mu, nu, psi)`.
 
 - `dg()` simulates replicate measurements of high-dimensional predictors, a
   sparse response and a true or noisy working graph from user-specified
@@ -60,8 +61,8 @@ working graph is a `p` by `p` 0/1 adjacency matrix.
 
 ## Parallel Runs
 
-`badgers()` evaluates the `(mu, nu)` grid serially. For large analyses,
-run fixed-`(mu, nu)` jobs in parallel with `badgers_mcmc()` and combine the
+`badgers()` evaluates the grid serially. For large analyses,
+run fixed-`(mu, nu, psi)` jobs in parallel with `badgers_mcmc()` and combine the
 MSPE results afterward. The example uses the `parallel` package and runs on
 Windows, macOS and Linux. See the parallel-runs vignette and the installed
 example:

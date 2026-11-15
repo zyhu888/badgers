@@ -16,14 +16,14 @@ knitr::opts_chunk$set(
 
 # Parallel BADGERS Runs
 
-`badgers()` evaluates the `(mu, nu)` grid serially. For larger analyses,
+`badgers()` evaluates the `(psi, mu, nu)` grid serially. For larger analyses,
 a more efficient workflow is to run `badgers_mcmc()` separately for each
-`(mu, nu)` pair, save one result per grid point, and select the final model
-using the validation MSPE. The paper workflow uses a coarse grid followed by a
-fine grid centered at the coarse optimum.
+`(psi, mu, nu)` combination, save one result per grid point, and select the
+final model using the validation MSPE. The paper workflow uses a coarse grid
+followed by a fine `(mu, nu)` grid centered at the coarse optimum.
 
 The template below mirrors the small runnable example in `?badgers`, but
-evaluates a `3 x 3` coarse grid and the resulting fine grid in parallel. It
+evaluates a coarse grid over `psi`, `mu` and `nu` and the resulting fine grid in parallel. It
 uses a PSOCK cluster from the `parallel` package (`makeCluster()` and
 `parLapplyLB()`), so it runs on Windows, macOS and Linux. On a Unix cluster,
 `mclapply()` is a lighter alternative that forks the current session, but it
@@ -71,15 +71,18 @@ if (!dir.exists(out_dir)) {
 ## Workers do not share memory with this session, so run_one() takes
 ## everything it needs as arguments.
 run_one <- function(i, grid, tag, sim, out_dir, n_iter, burnin) {
+  psi_i <- grid$psi[i]
   mu_i <- grid$mu[i]
   nu_i <- grid$nu[i]
 
   tryCatch({
-    out_file <- file.path(out_dir, sprintf("%s_mu%g_nu%g.rds", tag, mu_i, nu_i))
+    out_file <- file.path(
+      out_dir, sprintf("%s_psi%g_mu%g_nu%g.rds", tag, psi_i, mu_i, nu_i)
+    )
 
     if (file.exists(out_file)) {
-      message(sprintf("mu %g nu %g already exists, skipping: %s",
-                      mu_i, nu_i, out_file))
+      message(sprintf("psi %g mu %g nu %g already exists, skipping: %s",
+                      psi_i, mu_i, nu_i, out_file))
       return(NULL)
     }
 
@@ -90,6 +93,7 @@ run_one <- function(i, grid, tag, sim, out_dir, n_iter, burnin) {
       adj_graph = sim$graph,
       mu = mu_i,
       nu = nu_i,
+      psi = psi_i,
       n_iter = n_iter,
       burnin = burnin
     )
@@ -97,7 +101,7 @@ run_one <- function(i, grid, tag, sim, out_dir, n_iter, burnin) {
     tmp_file <- paste0(out_file, ".tmp")
     saveRDS(
       list(
-        mu = mu_i, nu = nu_i,
+        psi = psi_i, mu = mu_i, nu = nu_i,
         MSPE_tune = fit$MSPE_tune, MSPE_test = fit$MSPE_test,
         CI95 = fit$CI95, CI90 = fit$CI90, CI80 = fit$CI80,
         beta_mean = fit$beta_mean
@@ -108,7 +112,8 @@ run_one <- function(i, grid, tag, sim, out_dir, n_iter, burnin) {
 
     invisible(NULL)
   }, error = function(e) {
-    message(sprintf("ERROR: mu %g nu %g failed: %s", mu_i, nu_i, e$message))
+    message(sprintf("ERROR: psi %g mu %g nu %g failed: %s",
+                    psi_i, mu_i, nu_i, e$message))
     invisible(NULL)
   })
 }
@@ -136,7 +141,8 @@ run_grid <- function(grid, tag) {
   )
 
   res <- lapply(seq_len(nrow(grid)), function(i) {
-    f <- file.path(out_dir, sprintf("%s_mu%g_nu%g.rds", tag, grid$mu[i], grid$nu[i]))
+    f <- file.path(out_dir, sprintf("%s_psi%g_mu%g_nu%g.rds",
+                                    tag, grid$psi[i], grid$mu[i], grid$nu[i]))
     if (file.exists(f)) readRDS(f) else NULL
   })
   res[!vapply(res, is.null, logical(1))]
@@ -144,6 +150,7 @@ run_grid <- function(grid, tag) {
 
 summarize <- function(res) {
   data.frame(
+    psi = vapply(res, `[[`, numeric(1), "psi"),
     mu = vapply(res, `[[`, numeric(1), "mu"),
     nu = vapply(res, `[[`, numeric(1), "nu"),
     MSPE_tune = vapply(res, `[[`, numeric(1), "MSPE_tune"),
@@ -151,18 +158,19 @@ summarize <- function(res) {
   )
 }
 
-## ---- Step 1: coarse grid ----
-coarse_grid <- expand.grid(mu = c(1, 3, 5), nu = c(1, 3, 5))
+## ---- Step 1: coarse grid over (psi, mu, nu) ----
+coarse_grid <- expand.grid(psi = c(4, 6), mu = c(1, 3, 5), nu = c(1, 3, 5))
 coarse_res <- run_grid(coarse_grid, "coarse")
 coarse_table <- summarize(coarse_res)
 coarse_best <- coarse_table[which.min(coarse_table$MSPE_tune), ]
 
-## ---- Step 2: fine grid centered at the coarse optimum ----
+## ---- Step 2: fine (mu, nu) grid centered at the coarse optimum ----
 make_fine_values <- function(center) {
   seq(from = max(0.5, center - 1), to = center + 1, by = 0.5)
 }
 
 fine_grid <- expand.grid(
+  psi = coarse_best$psi,
   mu = make_fine_values(coarse_best$mu),
   nu = make_fine_values(coarse_best$nu)
 )
@@ -176,6 +184,7 @@ best <- fine_res[[best_idx]]
 
 cat("Selected mu:", best$mu, "\n")
 cat("Selected nu:", best$nu, "\n")
+cat("Selected psi:", best$psi, "\n")
 cat("Test MSPE:", best$MSPE_test, "\n")
 cat("True nonzero coefficients:", which(sim$beta != 0), "\n")
 cat("Selected by 95% interval:", which(best$CI95 != 0), "\n")
