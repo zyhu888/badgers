@@ -360,7 +360,7 @@ badgers_mcmc <- function(
 #'
 #' @param c Strength of the graph-guided shrinkage, a finite positive constant. Larger values of \code{c} give less shrinkage of the precision matrix entries for connected pairs of predictors.
 #'
-#' @param verbose Logical; print one line per \code{(mu, nu)} grid point. The sampler itself is always silent here.
+#' @param verbose Logical; print one line per grid point. The sampler itself is always silent here.
 #'
 #' @param lite Logical; if \code{TRUE}, full parameter traces are not stored.
 #'

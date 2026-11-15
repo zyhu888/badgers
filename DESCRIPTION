@@ -15,9 +15,10 @@ Description: R package for BADGERS (Bayesian ADaptive Graph-guided
     measurements, which may differ in number across predictors, and a
     working graph links the predictor-specific shrinkage parameters through a
     constrained Wishart prior. It provides an Rcpp-based Markov chain Monte
-    Carlo sampler, tuning of the log-shrinkage mean and scale (mu, nu) over a
-    grid using the validation mean squared prediction error, and simulation
-    utilities for generating data with a true or noisy working graph.
+    Carlo sampler, tuning of the log-shrinkage mean and scale (mu, nu), and
+    optionally the precision penalty parameter psi, over a grid using the
+    validation mean squared prediction error, and simulation utilities for
+    generating data with a true or noisy working graph.
 Depends: R (>= 4.0.0)
 License: GPL (>= 3)
 Encoding: UTF-8
