@@ -112,10 +112,10 @@ beta_true <- sim$beta
 # Running BADGERS
 
 Use `badgers()` to fit the `(mu, nu)` grid and select the pair with the
-smallest validation MSPE. The example below searches over `mu, nu` in
-`{1, 3}` with `psi` fixed at its default of 6 and reports the test MSPE and
-the selected predictors. To tune `psi` as well, as in the paper, pass for
-example `psi_grid = 2:6`.
+smallest validation MSPE. The example below searches over `mu` in
+`{1, 3}` with `nu = 0.5` and `psi` fixed at its default of 6, and reports the
+test MSPE and the selected predictors. To tune `psi` as well, as in the paper,
+pass for example `psi_grid = 2:6`.
 
 ```{r badgers-fit}
 set.seed(456)
@@ -125,7 +125,7 @@ fit <- badgers(
   ytest = sim$ytest, Wtest = sim$Wtest,
   adj_graph = sim$graph,
   mu_grid = c(1, 3),
-  nu_grid = c(1, 3),
+  nu_grid = 0.5,
   psi_grid = 6,
   n_iter = n_iter,
   burnin = burnin
