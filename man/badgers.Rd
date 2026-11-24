@@ -212,5 +212,5 @@ cat("Selected by 80\% interval:", which(fit$best_result$CI80 != 0), "\n")
 
 }
 \references{
-Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. A Graph-Guided Bayesian Regression Model for High-Dimensional Data with Replicated Covariates and Measurement Error. Manuscript.
+Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. BADGERS: Bayesian Adaptive Graph-Guided Errors-in-Variables Regression Solution for Structured High-Dimensional Data. Manuscript.
 }

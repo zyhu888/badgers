@@ -221,7 +221,7 @@ check_badgers_inputs <- function(ytrain, Wtrain, ytune, Wtune, ytest, Wtest,
 #' independent chains before inference. Iteration counts alone do not establish
 #' convergence.
 #'
-#' @references Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. A Graph-Guided Bayesian Regression Model for High-Dimensional Data with Replicated Covariates and Measurement Error. Manuscript.
+#' @references Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. BADGERS: Bayesian Adaptive Graph-Guided Errors-in-Variables Regression Solution for Structured High-Dimensional Data. Manuscript.
 #'
 #' @examples
 #' library(badgers)
@@ -429,7 +429,7 @@ badgers_mcmc <- function(
 #' independent chains before inference. Iteration counts alone do not establish
 #' convergence.
 #'
-#' @references Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. A Graph-Guided Bayesian Regression Model for High-Dimensional Data with Replicated Covariates and Measurement Error. Manuscript.
+#' @references Hu, Z., Qu, K., Long, Q., Yan, J., and Li, W. BADGERS: Bayesian Adaptive Graph-Guided Errors-in-Variables Regression Solution for Structured High-Dimensional Data. Manuscript.
 #'
 #' @examples
 #' library(badgers)

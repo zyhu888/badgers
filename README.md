@@ -152,7 +152,7 @@ If you use `badgers` in your research, please cite:
 
 ``` bibtex
 @unpublished{hu2026graph,
-  title  = {A Graph-Guided Bayesian Regression Model for High-Dimensional Data with Replicated Covariates and Measurement Error},
+  title  = {BADGERS: Bayesian Adaptive Graph-Guided Errors-in-Variables Regression Solution for Structured High-Dimensional Data},
   author = {Hu, Zeyu and Qu, Kewen and Long, Qi and Yan, Jun and Li, Wenrui},
   note   = {Manuscript},
   year   = {2026}
@@ -161,6 +161,6 @@ If you use `badgers` in your research, please cite:
 
 ## References
 
-Hu, Z., Qu, K., Long, Q., Yan, J., & Li, W. (2026). A Graph-Guided
-Bayesian Regression Model for High-Dimensional Data with Replicated
-Covariates and Measurement Error. Manuscript.
+Hu, Z., Qu, K., Long, Q., Yan, J., & Li, W. (2026). BADGERS: Bayesian
+Adaptive Graph-Guided Errors-in-Variables Regression Solution for Structured
+High-Dimensional Data. Manuscript.
