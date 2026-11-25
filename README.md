@@ -27,8 +27,6 @@ prediction error.
 R CMD INSTALL .
 ```
 
-Once the GitHub repository is publicly accessible, install it with:
-
 ``` r
 # install.packages("devtools")
 devtools::install_github("zyhu888/badgers")
